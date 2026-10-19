@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Hardhat build output and caches
+artifacts/
+cache/
+types/
+typechain-types/
+coverage/
+coverage.json
+ignition/deployments/chain-31337/
+
+# TypeScript output
+dist/
+*.tsbuildinfo
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+keystore*.json
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
