@@ -12,7 +12,21 @@ AI-assisted, blockchain-backed e-waste traceability — IEEE ClimateChain Global
 contracts/   Solidity sources (currently: LoopProofTypes.sol enum scaffold only)
 test/        TypeScript tests (currently: toolchain baseline only)
 docs/        DECISIONS.md, STATE_MACHINE.md, CONTRACT_TEST_PLAN.md
+web/         Next.js UI prototype (synthetic demo data; not connected to any backend or chain)
 ```
+
+### Web UI prototype (`web/`)
+
+Separate package with its own dependencies, so the Hardhat toolchain is untouched.
+
+```bash
+cd web
+npm install
+npm run dev        # http://localhost:3000
+npm run typecheck && npm test && npm run build
+```
+
+All data is synthetic (`web/lib/demo-data.ts`). There is no backend, database, or blockchain connection.
 
 ## Setup
 

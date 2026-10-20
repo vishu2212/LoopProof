@@ -31,3 +31,8 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Next.js (web/)
+.next/
+next-env.d.ts
+out/
