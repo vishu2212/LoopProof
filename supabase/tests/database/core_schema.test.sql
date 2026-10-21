@@ -1,9 +1,9 @@
--- pgTAP tests for supabase/migrations/20261020000000_loopproof_core_schema.sql
+-- pgTAP tests for supabase/migrations/
 -- Run LOCALLY ONLY:  supabase start && supabase db reset && supabase test db
 -- (requires Docker + Supabase CLI; never run against a hosted/production project)
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(39);
 
 -- ---- fixtures: five users (registrar, collector, processor, verifier, stranger) ----
 insert into auth.users (id, aud, role, email) values
@@ -137,10 +137,22 @@ select lives_ok($$select public.lp_resubmit_processing(current_setting('t.batch'
   (select pg_temp.upload(current_setting('t.batch')::uuid)), 10, 'application/pdf')$$, 'resubmission with NEW evidence');
 reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a4');
+select lives_ok($$select public.lp_return_batch(current_setting('t.batch')::uuid, 'MASS_DISCREPANCY', '{"mass_balance":false}')$$,
+  'verifier can return with MASS_DISCREPANCY when output (450 g) < intake (1000 g)');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a3');
+select lives_ok($$select public.lp_resubmit_processing(current_setting('t.batch')::uuid,
+  '[{"material_code":1,"mass_grams":700},{"material_code":2,"mass_grams":300}]', pg_temp.hash(7),
+  (select pg_temp.upload(current_setting('t.batch')::uuid)), 10, 'application/pdf')$$,
+  'resubmission with total_output_grams (1000 g) equal to intake_mass_grams (1000 g)');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a4');
+select throws_ok($$select public.lp_return_batch(current_setting('t.batch')::uuid, 'MASS_DISCREPANCY', '{"mass_balance":false}')$$,
+  '22023', null, 'cannot return with MASS_DISCREPANCY when total_output_grams equals intake_mass_grams');
 select lives_ok($$select public.lp_verify_batch(current_setting('t.batch')::uuid, '{"hash_matches":true}')$$, 'verifier verifies');
 select is((select state::text from public.batches where id = current_setting('t.batch')::uuid), 'VERIFIED', 'batch is VERIFIED');
-select is((select count(*)::int from public.processing_revisions where batch_id = current_setting('t.batch')::uuid), 2,
-  'both revisions are preserved (D-13)');
+select is((select count(*)::int from public.processing_revisions where batch_id = current_setting('t.batch')::uuid), 3,
+  'all revisions are preserved (D-13)');
 reset role;
 
 -- ---- integrity holds even for the owner / service role ----

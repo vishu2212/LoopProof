@@ -1103,6 +1103,33 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     assert.equal(shouldDisplayLiveOutcomeBanner("RETURNED", 3, rev3Decision), true);
     assert.equal(shouldDisplayLiveOutcomeBanner("PROCESSED_CLAIMED", 4, rev3Decision), false);
     assert.equal(shouldDisplayLiveOutcomeBanner("VERIFIED", 4, rev3Decision), false);
+
+    // 5. Verify forward-only Supabase migration structure and SQL guard
+    const baseMigrationSql = readFileSync(
+      join(import.meta.dirname, "../../supabase/migrations/20261020000000_loopproof_core_schema.sql"),
+      "utf8",
+    );
+    const guardMigrationSql = readFileSync(
+      join(import.meta.dirname, "../../supabase/migrations/20261021000000_verifier_mass_discrepancy_guard.sql"),
+      "utf8",
+    );
+    assert.equal(
+      baseMigrationSql.includes("cannot return with MASS_DISCREPANCY when total_output_grams"),
+      false,
+      "already-applied baseline migration 20261020000000 must not be edited",
+    );
+    assert.match(
+      guardMigrationSql,
+      /create or replace function private\.decide\(/i,
+    );
+    assert.match(
+      guardMigrationSql,
+      /if p_decision = 'returned' and p_return = 'MASS_DISCREPANCY' and v_total = b\.intake_mass_grams then/i,
+    );
+    assert.match(
+      guardMigrationSql,
+      /revoke all on function private\.decide\([\s\S]*?from public, anon, authenticated;/i,
+    );
   });
 
   it("Registrar: cancels a REGISTERED batch before collection via public.lp_cancel_batch and rejects post-collection cancellation", async () => {
