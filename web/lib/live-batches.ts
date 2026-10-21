@@ -771,7 +771,10 @@ export function validateChecklist(
 export type BatchContextForValidation = Pick<
   LiveBatchRow,
   "id" | "state" | "registrar_id" | "collector_id" | "processor_id" | "verifier_id" | "intake_mass_grams"
->;
+> & {
+  current_revision?: number;
+  claimed_output_grams?: number | null;
+};
 
 export type RecordCollectionInput = {
   batchId: string;
@@ -1137,6 +1140,57 @@ export async function submitProcessingWithRpc(
   };
 }
 
+export type MassBalanceContext = {
+  intakeMassGrams?: number | null;
+  claimedOutputGrams?: number | null;
+};
+
+/**
+ * Returns `false` when both recorded intake mass and claimed output mass for the
+ * active revision are known and equal (`unaccounted mass === 0 g`), meaning there
+ * is no mass discrepancy between claimed outputs and recorded intake.
+ */
+export function hasMassDiscrepancy(context?: MassBalanceContext): boolean {
+  const intake = context?.intakeMassGrams;
+  const claimed = context?.claimedOutputGrams;
+  if (
+    typeof intake === "number" &&
+    Number.isFinite(intake) &&
+    intake > 0 &&
+    typeof claimed === "number" &&
+    Number.isFinite(claimed) &&
+    claimed >= 0
+  ) {
+    return claimed !== intake;
+  }
+  return true;
+}
+
+/**
+ * Determines whether the top-level Return / Reject outcome banner should be
+ * displayed for a live batch. A prior revision's `RETURNED` decision must not
+ * remain displayed as the active batch outcome once the processor has submitted
+ * a newer revision (`PROCESSED_CLAIMED`) or the batch has reached `VERIFIED`.
+ */
+export function shouldDisplayLiveOutcomeBanner(
+  batchState: Exclude<BatchState, "NONE">,
+  currentRevision: number,
+  latestDecision: Pick<
+    LiveDecisionRow,
+    "revision" | "decision" | "return_reason" | "reject_reason"
+  > | null | undefined,
+): boolean {
+  if (!latestDecision) return false;
+  if (latestDecision.revision !== currentRevision) return false;
+  if (batchState === "RETURNED") {
+    return latestDecision.decision === "returned" && Boolean(latestDecision.return_reason);
+  }
+  if (batchState === "REJECTED") {
+    return latestDecision.decision === "rejected" && Boolean(latestDecision.reject_reason);
+  }
+  return false;
+}
+
 export type VerifierDecisionInput = {
   batchId: string;
   decision: "verified" | "returned" | "rejected";
@@ -1145,6 +1199,8 @@ export type VerifierDecisionInput = {
   checklist?: Record<string, unknown> | null;
   collectorId?: string;
   processorId?: string;
+  intakeMassGrams?: number | null;
+  claimedOutputGrams?: number | null;
   batch?: BatchContextForValidation;
 };
 
@@ -1164,6 +1220,7 @@ export function validateVerifierDecisionReason(
   decision: string,
   returnReason?: string | null,
   rejectReason?: string | null,
+  massBalance?: MassBalanceContext,
 ):
   | {
       ok: true;
@@ -1194,6 +1251,14 @@ export function validateVerifierDecisionReason(
         code: "INVALID_REASON",
         error:
           "Return reason is required and must be a valid public.return_reason code (INSUFFICIENT_EVIDENCE, EVIDENCE_UNREADABLE, OUTPUT_DATA_INCOMPLETE, or MASS_DISCREPANCY).",
+      };
+    }
+    if (reason === "MASS_DISCREPANCY" && !hasMassDiscrepancy(massBalance)) {
+      return {
+        ok: false,
+        code: "INVALID_REASON",
+        error:
+          "Cannot return batch for MASS_DISCREPANCY when claimed output mass equals recorded intake mass (0 g unaccounted mass).",
       };
     }
     return {
@@ -1309,6 +1374,10 @@ export async function decideBatchWithRpc(
     input.decision,
     input.returnReason,
     input.rejectReason,
+    {
+      intakeMassGrams: input.batch?.intake_mass_grams ?? input.intakeMassGrams,
+      claimedOutputGrams: input.batch?.claimed_output_grams ?? input.claimedOutputGrams,
+    },
   );
   if (!reasonCheck.ok) {
     return reasonCheck;
@@ -1393,11 +1462,25 @@ export async function submitVerifierDecisionFormData(
   const returnReasonRaw = formData.get("returnReason");
   const rejectReasonRaw = formData.get("rejectReason");
   const checklistJson = String(formData.get("checklistJson") ?? "{}");
+  const formIntakeRaw = formData.get("intakeMassGrams");
+  const formClaimedRaw = formData.get("claimedOutputGrams");
+
+  const intakeMassGrams =
+    batch?.intake_mass_grams ??
+    (formIntakeRaw !== null && String(formIntakeRaw).trim() !== ""
+      ? Number(formIntakeRaw)
+      : undefined);
+  const claimedOutputGrams =
+    batch?.claimed_output_grams ??
+    (formClaimedRaw !== null && String(formClaimedRaw).trim() !== ""
+      ? Number(formClaimedRaw)
+      : undefined);
 
   const reasonCheck = validateVerifierDecisionReason(
     decisionRaw,
     returnReasonRaw !== null ? String(returnReasonRaw) : null,
     rejectReasonRaw !== null ? String(rejectReasonRaw) : null,
+    { intakeMassGrams, claimedOutputGrams },
   );
   if (!reasonCheck.ok) {
     return {
@@ -1432,6 +1515,8 @@ export async function submitVerifierDecisionFormData(
       ? { rejectReason: reasonCheck.rejectReason }
       : {}),
     checklist,
+    intakeMassGrams,
+    claimedOutputGrams,
     batch,
   };
 

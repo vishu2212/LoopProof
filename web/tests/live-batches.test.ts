@@ -23,11 +23,13 @@ import {
   generateClaimKeyHex,
   getCurrentUserWithRoles,
   getVerifierDecisionSubmitLabel,
+  hasMassDiscrepancy,
   isValidUuid,
   recordCollectionWithRpc,
   recordReceiptWithRpc,
   registerBatchWithRpc,
   resolveBatchLifecycleAccess,
+  shouldDisplayLiveOutcomeBanner,
   submitProcessingWithRpc,
   submitVerifierDecisionFormData,
   validateAndPrepareEvidence,
@@ -995,7 +997,112 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     assert.match(uiSource, /decision === "returned"\s*\?[\s\S]*?name="returnReason"/);
     assert.match(uiSource, /decision === "rejected"\s*\?[\s\S]*?name="rejectReason"/);
     assert.match(uiSource, /getVerifierDecisionSubmitLabel\(decision\)/);
-    assert.match(uiSource, /validateVerifierDecisionReason\(decision,\s*returnReason,\s*rejectReason\)/);
+    assert.match(uiSource, /validateVerifierDecisionReason\(decision,\s*returnReason,\s*rejectReason/);
+  });
+
+  it("Regression (LP-000001 Revision 4): rejects MASS_DISCREPANCY return when claimed output equals intake (0 g unaccounted) and hides stale return banner on newer revisions", async () => {
+    const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+    const client = createMockSupabaseClient({
+      user: { id: VALID_VERIFIER_ID, email: "verifier@example.org" },
+      roles: ["verifier"],
+      onRpc: (fn, args) => {
+        calls.push({ fn, args });
+      },
+    });
+    const checklistObj = Object.fromEntries(
+      LIVE_VERIFIER_CHECKLIST.map((item) => [item.key, true]),
+    );
+
+    // Revision 4 outputs: 7,000 g + 3,000 g = 10,000 g against 10,000 g intake (0 g unaccounted)
+    const rev4OutputsCheck = validateProcessingOutputs(
+      [
+        { material_code: 101, mass_grams: 7000 },
+        { material_code: 201, mass_grams: 3000 },
+      ],
+      10000,
+    );
+    assert.equal(rev4OutputsCheck.ok, true);
+    if (rev4OutputsCheck.ok) {
+      assert.equal(rev4OutputsCheck.totalOutputGrams, 10000);
+    }
+
+    assert.equal(
+      hasMassDiscrepancy({ intakeMassGrams: 10000, claimedOutputGrams: 10000 }),
+      false,
+    );
+    assert.equal(
+      hasMassDiscrepancy({ intakeMassGrams: 10000, claimedOutputGrams: 7000 }),
+      true,
+    );
+
+    const rev4Batch = {
+      ...makeBatchContext({ state: "PROCESSED_CLAIMED", intake_mass_grams: 10000 }),
+      current_revision: 4,
+      claimed_output_grams: 10000,
+    };
+
+    // 1. Returning Revision 4 with MASS_DISCREPANCY is rejected before calling lp_return_batch
+    const badMassReturnForm = new FormData();
+    badMassReturnForm.set("batchId", CREATED_BATCH_ID);
+    badMassReturnForm.set("decision", "returned");
+    badMassReturnForm.set("returnReason", "MASS_DISCREPANCY");
+    badMassReturnForm.set("checklistJson", JSON.stringify(checklistObj));
+
+    const badMassRes = await submitVerifierDecisionFormData(
+      client,
+      badMassReturnForm,
+      rev4Batch,
+    );
+    assert.equal(badMassRes.status, "error");
+    assert.equal(badMassRes.code, "INVALID_REASON");
+    assert.match(badMassRes.message, /0 g unaccounted mass/i);
+    assert.equal(calls.length, 0);
+
+    // 2. Legitimate non-mass return reasons (e.g. INSUFFICIENT_EVIDENCE) still work on Revision 4
+    const validEvidenceReturnForm = new FormData();
+    validEvidenceReturnForm.set("batchId", CREATED_BATCH_ID);
+    validEvidenceReturnForm.set("decision", "returned");
+    validEvidenceReturnForm.set("returnReason", "INSUFFICIENT_EVIDENCE");
+    validEvidenceReturnForm.set("checklistJson", JSON.stringify(checklistObj));
+
+    const validEvidenceReturnRes = await submitVerifierDecisionFormData(
+      client,
+      validEvidenceReturnForm,
+      rev4Batch,
+    );
+    assert.equal(validEvidenceReturnRes.status, "success");
+    assert.equal(validEvidenceReturnRes.nextState, "RETURNED");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].fn, "lp_return_batch");
+    assert.equal(calls[0].args.p_reason, "INSUFFICIENT_EVIDENCE");
+
+    // 3. When a genuine mass discrepancy exists (e.g. Revision 3 had 7,000 g vs 10,000 g intake), MASS_DISCREPANCY is allowed
+    const rev3BatchWithDiscrepancy = {
+      ...makeBatchContext({ state: "PROCESSED_CLAIMED", intake_mass_grams: 10000 }),
+      current_revision: 3,
+      claimed_output_grams: 7000,
+    };
+    const validMassReturnRes = await submitVerifierDecisionFormData(
+      client,
+      badMassReturnForm,
+      rev3BatchWithDiscrepancy,
+    );
+    assert.equal(validMassReturnRes.status, "success");
+    assert.equal(validMassReturnRes.nextState, "RETURNED");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].fn, "lp_return_batch");
+    assert.equal(calls[1].args.p_reason, "MASS_DISCREPANCY");
+
+    // 4. Stale Revision 3 RETURNED (MASS_DISCREPANCY) outcome banner is NOT displayed when Revision 4 is PROCESSED_CLAIMED or VERIFIED
+    const rev3Decision = {
+      revision: 3,
+      decision: "returned" as const,
+      return_reason: "MASS_DISCREPANCY" as const,
+      reject_reason: null,
+    };
+    assert.equal(shouldDisplayLiveOutcomeBanner("RETURNED", 3, rev3Decision), true);
+    assert.equal(shouldDisplayLiveOutcomeBanner("PROCESSED_CLAIMED", 4, rev3Decision), false);
+    assert.equal(shouldDisplayLiveOutcomeBanner("VERIFIED", 4, rev3Decision), false);
   });
 
   it("Registrar: cancels a REGISTERED batch before collection via public.lp_cancel_batch and rejects post-collection cancellation", async () => {

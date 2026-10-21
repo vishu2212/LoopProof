@@ -73,13 +73,38 @@ async function fetchBatchContext(
   const { data } = await supabase
     .from("batches")
     .select(
-      "id, public_ref, state, registrar_id, collector_id, processor_id, verifier_id, intake_mass_grams",
+      "id, public_ref, state, registrar_id, collector_id, processor_id, verifier_id, intake_mass_grams, current_revision",
     )
     .eq("id", batchId)
     .maybeSingle();
-  return (data ?? undefined) as
-    | (BatchContextForValidation & { public_ref?: string })
-    | undefined;
+
+  if (!data) {
+    return undefined;
+  }
+
+  const row = data as BatchContextForValidation & {
+    public_ref?: string;
+    current_revision?: number;
+  };
+
+  let claimedOutputGrams: number | null = null;
+  if (typeof row.current_revision === "number" && row.current_revision > 0) {
+    const { data: revData } = await supabase
+      .from("processing_revisions")
+      .select("total_output_grams")
+      .eq("batch_id", batchId)
+      .eq("revision", row.current_revision)
+      .maybeSingle();
+    const total = (revData as { total_output_grams?: number } | null)?.total_output_grams;
+    if (typeof total === "number" && Number.isFinite(total)) {
+      claimedOutputGrams = Number(total);
+    }
+  }
+
+  return {
+    ...row,
+    claimed_output_grams: claimedOutputGrams,
+  };
 }
 
 function revalidateLiveBatchRoutes(batchId: string, publicRef?: string): void {

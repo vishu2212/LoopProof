@@ -14,6 +14,7 @@ import {
   getCurrentUserWithRoles,
   isPublicBatchRef,
   isValidUuid,
+  shouldDisplayLiveOutcomeBanner,
   type LiveBatchRow,
   type LiveDecisionRow,
   type LiveEventRow,
@@ -249,7 +250,8 @@ export default async function LiveBatchDetailPage({
         </div>
       </header>
 
-      {latestDecision && (latestDecision.return_reason || latestDecision.reject_reason) ? (
+      {shouldDisplayLiveOutcomeBanner(batch.state, batch.current_revision, latestDecision) &&
+      latestDecision ? (
         <section
           className={`card outcome outcome--${
             latestDecision.decision === "returned" ? "returned" : "rejected"
@@ -341,7 +343,13 @@ export default async function LiveBatchDetailPage({
         <LifecycleStepper current={batch.state} />
       </section>
 
-      <LiveLifecycleActions batch={batch} currentUser={user} roles={roles} />
+      <LiveLifecycleActions
+        batch={batch}
+        currentUser={user}
+        roles={roles}
+        claimedOutputGrams={currentOutputs.length > 0 ? outputsTotal : null}
+        currentOutputs={currentOutputs}
+      />
 
       <div className="detail-split">
         <section className="card detail-split__main" aria-labelledby="live-evidence-title">

@@ -18,6 +18,7 @@ import {
   LIVE_VERIFIER_CHECKLIST,
   MAX_PROCESSING_OUTPUTS,
   getVerifierDecisionSubmitLabel,
+  hasMassDiscrepancy,
   resolveBatchLifecycleAccess,
   validateVerifierDecisionReason,
   type AppRole,
@@ -30,6 +31,8 @@ type Props = {
   batch: LiveBatchRow;
   currentUser: AuthenticatedActor;
   roles: AppRole[];
+  claimedOutputGrams?: number | null;
+  currentOutputs?: ProcessingOutputInput[];
 };
 
 const INITIAL_FORM_STATE: LifecycleFormState = { status: "idle" };
@@ -228,22 +231,29 @@ function ProcessorClaimForm({
   mode,
   intakeMassGrams,
   nextRevision,
+  initialOutputs,
 }: {
   batchId: string;
   mode: "submit" | "resubmit";
   intakeMassGrams: number | null;
   nextRevision: number;
+  initialOutputs?: ProcessingOutputInput[];
 }) {
   const [state, formAction, isPending] = useActionState(
     submitProcessingAction,
     INITIAL_FORM_STATE,
   );
   const intake = intakeMassGrams ?? 0;
-  const defaultMass = intake > 0 ? Math.max(1, Math.floor(intake * 0.7)) : 1000;
+  const defaultMass = intake > 0 ? intake : 1000;
 
-  const [outputs, setOutputs] = useState<ProcessingOutputInput[]>([
-    { material_code: MATERIAL_OPTIONS[0].code, mass_grams: defaultMass },
-  ]);
+  const [outputs, setOutputs] = useState<ProcessingOutputInput[]>(() =>
+    initialOutputs && initialOutputs.length > 0
+      ? initialOutputs.map((o) => ({
+          material_code: Number(o.material_code),
+          mass_grams: Number(o.mass_grams),
+        }))
+      : [{ material_code: MATERIAL_OPTIONS[0].code, mass_grams: defaultMass }],
+  );
 
   const totalOutputGrams = outputs.reduce(
     (sum, item) => sum + (Number.isFinite(Number(item.mass_grams)) ? Number(item.mass_grams) : 0),
@@ -490,9 +500,13 @@ function ProcessorClaimForm({
 function VerifierDecisionForm({
   batchId,
   currentRevision,
+  intakeMassGrams,
+  claimedOutputGrams,
 }: {
   batchId: string;
   currentRevision: number;
+  intakeMassGrams?: number | null;
+  claimedOutputGrams?: number | null;
 }) {
   const [state, formAction, isPending] = useActionState(
     verifierDecisionAction,
@@ -507,6 +521,10 @@ function VerifierDecisionForm({
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const tickedCount = LIVE_VERIFIER_CHECKLIST.filter((item) => checked[item.key]).length;
+  const massDiscrepancyPresent = hasMassDiscrepancy({
+    intakeMassGrams,
+    claimedOutputGrams,
+  });
 
   const submitLabel = getVerifierDecisionSubmitLabel(decision);
 
@@ -523,7 +541,10 @@ function VerifierDecisionForm({
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    const check = validateVerifierDecisionReason(decision, returnReason, rejectReason);
+    const check = validateVerifierDecisionReason(decision, returnReason, rejectReason, {
+      intakeMassGrams,
+      claimedOutputGrams,
+    });
     if (!check.ok) {
       e.preventDefault();
       setValidationError(check.error);
@@ -558,6 +579,12 @@ function VerifierDecisionForm({
       >
         <input type="hidden" name="batchId" value={batchId} />
         <input type="hidden" name="checklistJson" value={JSON.stringify(checked)} />
+        {typeof intakeMassGrams === "number" ? (
+          <input type="hidden" name="intakeMassGrams" value={intakeMassGrams} />
+        ) : null}
+        {typeof claimedOutputGrams === "number" ? (
+          <input type="hidden" name="claimedOutputGrams" value={claimedOutputGrams} />
+        ) : null}
 
         <fieldset className="checklist">
           <legend>Independent Verification Checklist (persisted in Supabase)</legend>
@@ -673,11 +700,22 @@ function VerifierDecisionForm({
               className="form-input"
             >
               <option value="">Select a return reason…</option>
-              {LIVE_RETURN_REASONS.map((code) => (
-                <option key={code} value={code}>
-                  {code} — {REASON_MEANING[code]}
-                </option>
-              ))}
+              {LIVE_RETURN_REASONS.map((code) => {
+                const isMassDiscrepancyBlocked =
+                  code === "MASS_DISCREPANCY" && !massDiscrepancyPresent;
+                return (
+                  <option
+                    key={code}
+                    value={code}
+                    disabled={isMassDiscrepancyBlocked}
+                  >
+                    {code} — {REASON_MEANING[code]}
+                    {isMassDiscrepancyBlocked
+                      ? " (0 g unaccounted — no mass discrepancy)"
+                      : ""}
+                  </option>
+                );
+              })}
             </select>
             <span className="form-hint">
               Reasons are standardized enum codes only (no free text). Processor must upload new
@@ -795,7 +833,13 @@ function RegistrarCancelForm({ batchId }: { batchId: string }) {
   );
 }
 
-export function LiveLifecycleActions({ batch, currentUser, roles }: Props) {
+export function LiveLifecycleActions({
+  batch,
+  currentUser,
+  roles,
+  claimedOutputGrams,
+  currentOutputs,
+}: Props) {
   const access = resolveBatchLifecycleAccess(batch, currentUser, roles);
 
   return (
@@ -846,26 +890,33 @@ export function LiveLifecycleActions({ batch, currentUser, roles }: Props) {
 
       {access.allowedActions.includes("submit_processing") ? (
         <ProcessorClaimForm
+          key={`submit-${batch.id}-${batch.current_revision}`}
           batchId={batch.id}
           mode="submit"
           intakeMassGrams={batch.intake_mass_grams}
           nextRevision={batch.current_revision + 1}
+          initialOutputs={currentOutputs}
         />
       ) : null}
 
       {access.allowedActions.includes("resubmit_processing") ? (
         <ProcessorClaimForm
+          key={`resubmit-${batch.id}-${batch.current_revision}`}
           batchId={batch.id}
           mode="resubmit"
           intakeMassGrams={batch.intake_mass_grams}
           nextRevision={batch.current_revision + 1}
+          initialOutputs={currentOutputs}
         />
       ) : null}
 
       {access.allowedActions.includes("verifier_decision") ? (
         <VerifierDecisionForm
+          key={`verifier-${batch.id}-${batch.current_revision}`}
           batchId={batch.id}
           currentRevision={batch.current_revision}
+          intakeMassGrams={batch.intake_mass_grams}
+          claimedOutputGrams={claimedOutputGrams}
         />
       ) : null}
 
