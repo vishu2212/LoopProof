@@ -1,0 +1,748 @@
+-- =============================================================================
+-- LoopProof — core schema (migration 1 of N)            STATUS: PROPOSED / UNAPPLIED
+--
+-- Mirrors contracts/LoopProofRegistry.sol and docs/STATE_MACHINE.md.
+-- Product principle: "Collected does not mean recycled."  Every row records what
+-- was CLAIMED or ATTESTED and by whom — never that recycling physically occurred.
+--
+-- Security model (summary; see supabase/README.md):
+--   * Every table has Row Level Security enabled. `anon` has no access at all.
+--   * `authenticated` users get SELECT only, and only on batches they are assigned to.
+--   * There are NO insert/update/delete grants or policies for clients. All writes go
+--     through SECURITY DEFINER functions (public.lp_*) that check role + assignment +
+--     lifecycle state and write the audit trail in the same transaction.
+--   * Triggers independently enforce the lifecycle (so even the service role cannot
+--     skip a stage or mark a batch VERIFIED without a verifier decision row).
+--   * Evidence files live in the PRIVATE Storage bucket `evidence`. The database
+--     stores only metadata and SHA-256 hashes. No impact figures are stored (D-08).
+--   * No secrets, seed data, or real data in this file. Demo mode (DEMO-001..007) stays
+--     in web/lib/demo-data.ts; real batch refs use a different format (LP-000001).
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 0. Schemas
+-- ---------------------------------------------------------------------------
+-- `private` is NOT in the API's exposed schemas. It holds internal helpers.
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated, service_role;
+alter default privileges in schema private revoke execute on functions from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 1. Enumerations (mirror contracts/LoopProofTypes.sol; NONE == "no row")
+-- ---------------------------------------------------------------------------
+create type public.batch_state as enum (
+  'REGISTERED', 'COLLECTED', 'RECEIVED', 'PROCESSED_CLAIMED',
+  'VERIFIED', 'RETURNED', 'REJECTED', 'CANCELLED'
+);
+create type public.return_reason as enum (
+  'INSUFFICIENT_EVIDENCE', 'EVIDENCE_UNREADABLE', 'OUTPUT_DATA_INCOMPLETE', 'MASS_DISCREPANCY'
+);
+create type public.reject_reason as enum (
+  'EVIDENCE_INCONSISTENT', 'MASS_BALANCE_IMPLAUSIBLE', 'PROCESSOR_NOT_QUALIFIED', 'CHAIN_OF_CUSTODY_BROKEN'
+);
+create type public.app_role as enum ('registrar', 'collector', 'processor', 'verifier');
+create type public.evidence_kind as enum ('collection_record', 'receipt_record', 'processing_claim');
+create type public.decision_kind as enum ('verified', 'returned', 'rejected');
+
+comment on type public.batch_state is
+  'Canonical lifecycle (REGISTERED..VERIFIED) plus alternative outcomes (RETURNED, REJECTED, CANCELLED). '
+  '"Pending verifier review" is a REVIEW STATUS derived from PROCESSED_CLAIMED, never a state.';
+
+-- ---------------------------------------------------------------------------
+-- 2. Pure helpers: transition table (STATE_MACHINE.md §3) and storage path parser
+-- ---------------------------------------------------------------------------
+create function private.transition_allowed(p_from public.batch_state, p_to public.batch_state)
+returns boolean
+language sql immutable parallel safe
+set search_path = ''
+as $$
+  select case
+    when p_from is null then p_to = 'REGISTERED'
+    else (p_from::text || '>' || p_to::text) = any (array[
+      'REGISTERED>COLLECTED',
+      'REGISTERED>CANCELLED',
+      'COLLECTED>RECEIVED',
+      'RECEIVED>PROCESSED_CLAIMED',
+      'PROCESSED_CLAIMED>VERIFIED',
+      'PROCESSED_CLAIMED>RETURNED',
+      'PROCESSED_CLAIMED>REJECTED',
+      'RETURNED>PROCESSED_CLAIMED'
+    ])
+  end;
+$$;
+
+-- Storage object names must be "<batch uuid>/<object uuid>".
+create function private.storage_batch_id(p_name text)
+returns uuid language sql immutable parallel safe set search_path = '' as $$
+  select case
+    when p_name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then split_part(p_name, '/', 1)::uuid
+  end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Tables
+-- ---------------------------------------------------------------------------
+
+-- 3.1 Role assignments. Managed ONLY by the service role / admin tooling; clients can
+--     read their own rows. There is deliberately no "admin" role with lifecycle powers (D-16).
+create table public.user_roles (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  role       public.app_role not null,
+  granted_at timestamptz not null default now(),
+  primary key (user_id, role)
+);
+
+-- 3.2 Batches. Assignees are locked at registration (D-15, D-17).
+create sequence private.batch_ref_seq as bigint minvalue 1 start 1;
+
+create table public.batches (
+  id                uuid primary key default gen_random_uuid(),
+  public_ref        text not null unique check (public_ref ~ '^LP-[0-9]{6,}$'),   -- never "DEMO-…"
+  -- Opaque 32-byte commitment computed off-chain (salted hash). Raw serials/salt never stored here (D-04/D-05).
+  claim_key         bytea not null unique
+                      check (octet_length(claim_key) = 32 and claim_key <> decode(repeat('00', 32), 'hex')),
+  -- Human-confirmed category (D-06: AI is advisory; the registrar confirms).
+  category_code     integer not null check (category_code between 1 and 65535),
+  registrar_id      uuid not null references auth.users (id),
+  collector_id      uuid not null references auth.users (id),
+  processor_id      uuid not null references auth.users (id),
+  verifier_id       uuid not null references auth.users (id),
+  state             public.batch_state not null default 'REGISTERED',
+  intake_mass_grams bigint check (intake_mass_grams > 0),
+  current_revision  integer not null default 0 check (current_revision >= 0),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  -- Verifier independence (STATE_MACHINE rule 3).
+  constraint batches_verifier_independent check (verifier_id <> collector_id and verifier_id <> processor_id),
+  -- Intake is recorded exactly at collection, so it exists iff the batch got past REGISTERED/CANCELLED.
+  constraint batches_intake_iff_collected
+    check ((state in ('REGISTERED', 'CANCELLED')) = (intake_mass_grams is null)),
+  constraint batches_revision_matches_state
+    check ((state in ('REGISTERED', 'COLLECTED', 'RECEIVED', 'CANCELLED')) = (current_revision = 0))
+);
+
+-- 3.3 Evidence metadata. File CONTENT stays in the private Storage bucket (D-04).
+create table public.evidence (
+  id             uuid primary key default gen_random_uuid(),
+  batch_id       uuid not null references public.batches (id) on delete restrict,
+  kind           public.evidence_kind not null,
+  revision       integer check (revision >= 1),                     -- set only for processing_claim
+  -- SHA-256 of the file. Globally unique: a hash can never be reused, in any batch (STATE_MACHINE rule 4).
+  -- NOTE: until a trusted server-side job re-hashes the stored object, this value is client-asserted.
+  sha256         bytea not null unique
+                   check (octet_length(sha256) = 32 and sha256 <> decode(repeat('00', 32), 'hex')),
+  storage_bucket text not null default 'evidence' check (storage_bucket = 'evidence'),
+  storage_path   text not null unique,
+  byte_size      bigint not null check (byte_size > 0 and byte_size <= 52428800),
+  mime_type      text not null check (mime_type in ('application/pdf', 'image/jpeg', 'image/png')),
+  submitted_by   uuid not null references auth.users (id),
+  created_at     timestamptz not null default now(),
+  constraint evidence_path_in_batch_folder check (private.storage_batch_id(storage_path) = batch_id),
+  constraint evidence_revision_iff_claim check ((kind = 'processing_claim') = (revision is not null))
+);
+create unique index evidence_one_per_stage on public.evidence (batch_id, kind) where revision is null;
+create unique index evidence_one_per_revision on public.evidence (batch_id, revision) where revision is not null;
+
+-- 3.4 Processing claim revisions + output fractions (D-13: resubmission replaces the current
+--     set but earlier revisions are preserved).
+create table public.processing_revisions (
+  batch_id           uuid not null references public.batches (id) on delete restrict,
+  revision           integer not null check (revision >= 1),
+  evidence_id        uuid not null unique references public.evidence (id),
+  total_output_grams bigint not null check (total_output_grams > 0),
+  created_by         uuid not null references auth.users (id),
+  created_at         timestamptz not null default now(),
+  primary key (batch_id, revision)
+);
+
+create table public.processing_outputs (
+  batch_id      uuid not null,
+  revision      integer not null,
+  position      smallint not null check (position between 1 and 16),   -- MAX_OUTPUTS = 16
+  material_code integer not null check (material_code between 1 and 65535),
+  mass_grams    bigint not null check (mass_grams > 0),
+  primary key (batch_id, revision, position),
+  foreign key (batch_id, revision) references public.processing_revisions (batch_id, revision) on delete restrict
+);
+
+-- 3.5 Verifier decisions. One per reviewed revision. Reasons are enum codes only (D-14): no free text.
+create table public.verifier_decisions (
+  id            uuid primary key default gen_random_uuid(),
+  batch_id      uuid not null,
+  revision      integer not null,
+  decision      public.decision_kind not null,
+  return_reason public.return_reason,
+  reject_reason public.reject_reason,
+  checklist     jsonb not null default '{}'::jsonb check (jsonb_typeof(checklist) = 'object'),   -- {item_key: boolean}
+  verifier_id   uuid not null references auth.users (id),
+  created_at    timestamptz not null default now(),
+  unique (batch_id, revision),
+  foreign key (batch_id, revision) references public.processing_revisions (batch_id, revision) on delete restrict,
+  constraint decisions_return_reason_iff_returned check ((decision = 'returned') = (return_reason is not null)),
+  constraint decisions_reject_reason_iff_rejected check ((decision = 'rejected') = (reject_reason is not null))
+);
+
+-- 3.6 Append-only lifecycle history (mirrors BatchStateChanged). No UPDATE/DELETE/TRUNCATE ever.
+create table public.batch_events (
+  id            bigint generated always as identity primary key,
+  batch_id      uuid not null references public.batches (id) on delete restrict,
+  seq           integer not null check (seq >= 1),
+  from_state    public.batch_state,                                  -- null only for registration
+  to_state      public.batch_state not null,
+  actor_id      uuid not null references auth.users (id),
+  evidence_id   uuid references public.evidence (id),
+  revision      integer,
+  return_reason public.return_reason,
+  reject_reason public.reject_reason,
+  created_at    timestamptz not null default now(),
+  unique (batch_id, seq),
+  constraint events_valid_transition check (private.transition_allowed(from_state, to_state)),
+  constraint events_return_reason_iff_returned check ((to_state = 'RETURNED') = (return_reason is not null)),
+  constraint events_reject_reason_iff_rejected check ((to_state = 'REJECTED') = (reject_reason is not null))
+);
+create index batch_events_batch_idx on public.batch_events (batch_id, seq);
+create index evidence_batch_idx on public.evidence (batch_id);
+
+-- ---------------------------------------------------------------------------
+-- 4. Integrity triggers (apply to EVERY role, including the service role)
+-- ---------------------------------------------------------------------------
+
+-- 4.1 Append-only tables.
+create function private.forbid_mutation()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  raise exception '% is append-only (% is not allowed)', tg_table_name, tg_op using errcode = '42501';
+end;
+$$;
+
+create trigger evidence_append_only before update or delete on public.evidence
+  for each row execute function private.forbid_mutation();
+create trigger evidence_no_truncate before truncate on public.evidence
+  for each statement execute function private.forbid_mutation();
+
+create trigger revisions_append_only before update or delete on public.processing_revisions
+  for each row execute function private.forbid_mutation();
+create trigger revisions_no_truncate before truncate on public.processing_revisions
+  for each statement execute function private.forbid_mutation();
+
+create trigger outputs_append_only before update or delete on public.processing_outputs
+  for each row execute function private.forbid_mutation();
+create trigger outputs_no_truncate before truncate on public.processing_outputs
+  for each statement execute function private.forbid_mutation();
+
+create trigger decisions_append_only before update or delete on public.verifier_decisions
+  for each row execute function private.forbid_mutation();
+create trigger decisions_no_truncate before truncate on public.verifier_decisions
+  for each statement execute function private.forbid_mutation();
+
+create trigger events_append_only before update or delete on public.batch_events
+  for each row execute function private.forbid_mutation();
+create trigger events_no_truncate before truncate on public.batch_events
+  for each statement execute function private.forbid_mutation();
+
+create trigger batches_no_delete before delete on public.batches
+  for each row execute function private.forbid_mutation();
+create trigger batches_no_truncate before truncate on public.batches
+  for each statement execute function private.forbid_mutation();
+
+-- 4.2 Batch lifecycle guard.
+--     * Any insert/update must happen inside a lp_* function (transaction-local flag).
+--     * Only transitions in the table are allowed; terminal states are frozen.
+--     * Identity/assignment columns are immutable; intake mass is write-once.
+--     * VERIFIED is unreachable without a matching 'verified' decision by the assigned verifier.
+create function private.guard_batches()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if current_setting('loopproof.in_transition', true) is distinct from 'on' then
+    raise exception 'batches may only change through LoopProof lifecycle functions' using errcode = '42501';
+  end if;
+
+  if tg_op = 'INSERT' then
+    if new.state <> 'REGISTERED' or new.current_revision <> 0 or new.intake_mass_grams is not null then
+      raise exception 'a new batch must start as REGISTERED' using errcode = '55000';
+    end if;
+    return new;
+  end if;
+
+  if old.state in ('VERIFIED', 'REJECTED', 'CANCELLED') then
+    raise exception 'batch % is in terminal state %', old.public_ref, old.state using errcode = '55000';
+  end if;
+
+  if new.id <> old.id or new.public_ref <> old.public_ref or new.claim_key <> old.claim_key
+     or new.category_code <> old.category_code or new.created_at <> old.created_at
+     or new.registrar_id <> old.registrar_id or new.collector_id <> old.collector_id
+     or new.processor_id <> old.processor_id or new.verifier_id <> old.verifier_id then
+    raise exception 'identity and assigned roles are immutable (D-15)' using errcode = '55000';
+  end if;
+
+  if new.state = old.state or not private.transition_allowed(old.state, new.state) then
+    raise exception 'invalid transition % -> %', old.state, new.state using errcode = '55000';
+  end if;
+
+  if old.intake_mass_grams is not null and new.intake_mass_grams is distinct from old.intake_mass_grams then
+    raise exception 'intake mass is write-once' using errcode = '55000';
+  end if;
+
+  if new.state = 'COLLECTED' then
+    if not exists (
+         select 1 from public.evidence e
+         where e.batch_id = new.id and e.kind = 'collection_record') then
+      raise exception 'COLLECTED requires a collection_record evidence row' using errcode = '55000';
+    end if;
+  elsif new.state = 'RECEIVED' then
+    if not exists (
+         select 1 from public.evidence e
+         where e.batch_id = new.id and e.kind = 'receipt_record') then
+      raise exception 'RECEIVED requires a receipt_record evidence row' using errcode = '55000';
+    end if;
+  end if;
+
+  if new.state = 'PROCESSED_CLAIMED' then
+    if new.current_revision <> old.current_revision + 1 or not exists (
+         select 1 from public.processing_revisions r
+         where r.batch_id = new.id and r.revision = new.current_revision) then
+      raise exception 'PROCESSED_CLAIMED requires a new processing revision' using errcode = '55000';
+    end if;
+  elsif new.current_revision <> old.current_revision then
+    raise exception 'revision may only advance when a processing claim is submitted' using errcode = '55000';
+  end if;
+
+  if new.state in ('VERIFIED', 'RETURNED', 'REJECTED') then
+    if not exists (
+         select 1 from public.verifier_decisions d
+         where d.batch_id = new.id and d.revision = new.current_revision
+           and d.verifier_id = new.verifier_id
+           and d.decision = (case new.state when 'VERIFIED' then 'verified'
+                                            when 'RETURNED' then 'returned'
+                                            else 'rejected' end)::public.decision_kind) then
+      raise exception '% requires a matching decision by the assigned verifier', new.state using errcode = '55000';
+    end if;
+  end if;
+
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger batches_guard before insert or update on public.batches
+  for each row execute function private.guard_batches();
+
+-- ---------------------------------------------------------------------------
+-- 5. Read-access helpers (used by RLS policies; run as owner to avoid policy recursion)
+-- ---------------------------------------------------------------------------
+create function private.is_batch_participant(p_batch_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.batches b
+    where b.id = p_batch_id
+      and (select auth.uid()) in (b.registrar_id, b.collector_id, b.processor_id, b.verifier_id)
+  );
+$$;
+
+-- Uploads: only the assigned collector (before collection) or assigned processor (receipt/claim stages),
+-- who must also still hold the role (D-17).
+create function private.can_upload_evidence(p_name text)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1
+    from public.batches b
+    where b.id = private.storage_batch_id(p_name)
+      and (
+        (b.state = 'REGISTERED' and b.collector_id = (select auth.uid())
+           and exists (select 1 from public.user_roles r where r.user_id = b.collector_id and r.role = 'collector'))
+        or
+        (b.state in ('COLLECTED', 'RECEIVED', 'RETURNED') and b.processor_id = (select auth.uid())
+           and exists (select 1 from public.user_roles r where r.user_id = b.processor_id and r.role = 'processor'))
+      )
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 6. Row Level Security: enabled on every table; SELECT-only for authenticated participants
+-- ---------------------------------------------------------------------------
+alter table public.user_roles          enable row level security;
+alter table public.batches             enable row level security;
+alter table public.evidence            enable row level security;
+alter table public.processing_revisions enable row level security;
+alter table public.processing_outputs  enable row level security;
+alter table public.verifier_decisions  enable row level security;
+alter table public.batch_events        enable row level security;
+
+revoke all on public.user_roles, public.batches, public.evidence, public.processing_revisions,
+              public.processing_outputs, public.verifier_decisions, public.batch_events
+  from public, anon, authenticated;
+grant select on public.user_roles, public.batches, public.evidence, public.processing_revisions,
+                public.processing_outputs, public.verifier_decisions, public.batch_events
+  to authenticated;
+
+create policy user_roles_select_own on public.user_roles
+  for select to authenticated using (user_id = (select auth.uid()));
+
+create policy batches_select_participant on public.batches
+  for select to authenticated using ((select private.is_batch_participant(id)));
+
+create policy evidence_select_participant on public.evidence
+  for select to authenticated using ((select private.is_batch_participant(batch_id)));
+
+create policy revisions_select_participant on public.processing_revisions
+  for select to authenticated using ((select private.is_batch_participant(batch_id)));
+
+create policy outputs_select_participant on public.processing_outputs
+  for select to authenticated using ((select private.is_batch_participant(batch_id)));
+
+create policy decisions_select_participant on public.verifier_decisions
+  for select to authenticated using ((select private.is_batch_participant(batch_id)));
+
+create policy events_select_participant on public.batch_events
+  for select to authenticated using ((select private.is_batch_participant(batch_id)));
+
+-- (No INSERT / UPDATE / DELETE policies exist: with RLS on, that means clients cannot write.)
+
+-- ---------------------------------------------------------------------------
+-- 7. Private Storage bucket for evidence files (never public)
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('evidence', 'evidence', false, 20971520, array['application/pdf', 'image/jpeg', 'image/png', 'application/json'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+create policy evidence_files_select_participant on storage.objects
+  for select to authenticated
+  using (bucket_id = 'evidence' and (select private.is_batch_participant(private.storage_batch_id(name))));
+
+create policy evidence_files_insert_actor on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'evidence' and (select private.can_upload_evidence(name)));
+-- No UPDATE or DELETE policies on storage.objects: uploaded evidence files cannot be overwritten or deleted by clients.
+
+
+-- ---------------------------------------------------------------------------
+-- 8. Internal write helpers (not callable by clients)
+-- ---------------------------------------------------------------------------
+create function private.lock_batch(p_batch_id uuid, p_role public.app_role)
+returns public.batches
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  b     public.batches;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+  select * into b from public.batches where id = p_batch_id for update;
+  if not found then
+    raise exception 'unknown batch' using errcode = 'P0002';
+  end if;
+  if not exists (select 1 from public.user_roles where user_id = v_uid and role = p_role) then
+    raise exception 'missing role %', p_role using errcode = '42501';
+  end if;
+  if v_uid is distinct from (case p_role
+        when 'registrar' then b.registrar_id
+        when 'collector' then b.collector_id
+        when 'processor' then b.processor_id
+        when 'verifier'  then b.verifier_id end) then
+    raise exception 'caller is not the % assigned to this batch', p_role using errcode = '42501';
+  end if;
+  perform set_config('loopproof.in_transition', 'on', true);   -- transaction-local
+  return b;
+end;
+$$;
+
+create function private.require_state(b public.batches, p_expected public.batch_state[])
+returns void language plpgsql set search_path = '' as $$
+begin
+  if not (b.state = any (p_expected)) then
+    raise exception 'invalid transition from %', b.state using errcode = '55000';
+  end if;
+end;
+$$;
+
+create function private.add_evidence(
+  p_batch_id uuid, p_kind public.evidence_kind, p_revision integer,
+  p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
+begin
+  if not exists (select 1 from storage.objects o where o.bucket_id = 'evidence' and o.name = p_storage_path) then
+    raise exception 'evidence file has not been uploaded to the private bucket' using errcode = '55000';
+  end if;
+  insert into public.evidence (batch_id, kind, revision, sha256, storage_path, byte_size, mime_type, submitted_by)
+  values (p_batch_id, p_kind, p_revision, p_sha256, p_storage_path, p_byte_size, p_mime_type, auth.uid())
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+create function private.log_event(
+  p_batch_id uuid, p_from public.batch_state, p_to public.batch_state, p_evidence uuid,
+  p_revision integer, p_return public.return_reason, p_reject public.reject_reason)
+returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.batch_events
+    (batch_id, seq, from_state, to_state, actor_id, evidence_id, revision, return_reason, reject_reason)
+  select p_batch_id, coalesce(max(e.seq), 0) + 1, p_from, p_to, auth.uid(), p_evidence, p_revision, p_return, p_reject
+  from public.batch_events e where e.batch_id = p_batch_id;
+end;
+$$;
+
+create function private.decide(
+  p_batch_id uuid, p_decision public.decision_kind,
+  p_return public.return_reason, p_reject public.reject_reason, p_checklist jsonb)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  b      public.batches;
+  v_to   public.batch_state;
+  v_ev   uuid;
+begin
+  b := private.lock_batch(p_batch_id, 'verifier');
+  -- Defense in depth: the assigned verifier is already distinct (table constraint), re-check anyway.
+  if auth.uid() in (b.collector_id, b.processor_id) then
+    raise exception 'verifier must be independent of collector and processor' using errcode = '42501';
+  end if;
+  perform private.require_state(b, array['PROCESSED_CLAIMED']::public.batch_state[]);
+
+  p_checklist := coalesce(p_checklist, '{}'::jsonb);
+  if jsonb_typeof(p_checklist) <> 'object'
+     or (select count(*) from jsonb_each(p_checklist)) > 20
+     or exists (select 1 from jsonb_each(p_checklist) c where jsonb_typeof(c.value) <> 'boolean' or length(c.key) > 64) then
+    raise exception 'checklist must be an object of at most 20 boolean items' using errcode = '22023';
+  end if;
+
+  v_to := (case p_decision
+             when 'verified' then 'VERIFIED'
+             when 'returned' then 'RETURNED'
+             else 'REJECTED' end)::public.batch_state;
+
+  select r.evidence_id into v_ev
+  from public.processing_revisions r where r.batch_id = b.id and r.revision = b.current_revision;
+
+  insert into public.verifier_decisions (batch_id, revision, decision, return_reason, reject_reason, checklist, verifier_id)
+  values (b.id, b.current_revision, p_decision, p_return, p_reject, p_checklist, auth.uid());   -- table CHECKs enforce reasons
+
+  update public.batches set state = v_to where id = b.id;
+  perform private.log_event(b.id, b.state, v_to, v_ev, b.current_revision, p_return, p_reject);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 9. Public lifecycle API (the ONLY write path for clients)
+-- ---------------------------------------------------------------------------
+create function public.lp_register_batch(
+  p_claim_key bytea, p_category_code integer,
+  p_collector uuid, p_processor uuid, p_verifier uuid)
+returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  v_id  uuid;
+  v_ref text;
+  v_who uuid;
+  v_role public.app_role;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+  if not exists (select 1 from public.user_roles where user_id = v_uid and role = 'registrar') then
+    raise exception 'missing role registrar' using errcode = '42501';
+  end if;
+  -- Every assignee must currently hold their role (AssigneeMissingRole).
+  for v_who, v_role in
+    select * from (values (p_collector, 'collector'::public.app_role),
+                          (p_processor, 'processor'::public.app_role),
+                          (p_verifier,  'verifier'::public.app_role)) t(u, r)
+  loop
+    if v_who is null or not exists (select 1 from public.user_roles where user_id = v_who and role = v_role) then
+      raise exception 'assignee for % does not hold that role', v_role using errcode = '42501';
+    end if;
+  end loop;
+
+  perform set_config('loopproof.in_transition', 'on', true);
+  v_ref := 'LP-' || lpad(nextval('private.batch_ref_seq')::text, 6, '0');
+  insert into public.batches (public_ref, claim_key, category_code, registrar_id, collector_id, processor_id, verifier_id)
+  values (v_ref, p_claim_key, p_category_code, v_uid, p_collector, p_processor, p_verifier)
+  returning id into v_id;                      -- CHECKs: claim key, verifier independence
+  perform private.log_event(v_id, null, 'REGISTERED', null, null, null, null);
+  return v_id;
+end;
+$$;
+
+create function public.lp_cancel_batch(p_batch_id uuid)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare b public.batches;
+begin
+  b := private.lock_batch(p_batch_id, 'registrar');            -- assigned registrar only (M-01)
+  perform private.require_state(b, array['REGISTERED']::public.batch_state[]);   -- never after collection
+  update public.batches set state = 'CANCELLED' where id = b.id;
+  perform private.log_event(b.id, b.state, 'CANCELLED', null, null, null, null);
+end;
+$$;
+
+create function public.lp_record_collection(
+  p_batch_id uuid, p_intake_mass_grams bigint,
+  p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare b public.batches; v_ev uuid;
+begin
+  b := private.lock_batch(p_batch_id, 'collector');
+  perform private.require_state(b, array['REGISTERED']::public.batch_state[]);
+  if p_intake_mass_grams is null or p_intake_mass_grams <= 0 then
+    raise exception 'intake mass must be > 0 grams' using errcode = '22023';
+  end if;
+  v_ev := private.add_evidence(b.id, 'collection_record', null, p_sha256, p_storage_path, p_byte_size, p_mime_type);
+  update public.batches set state = 'COLLECTED', intake_mass_grams = p_intake_mass_grams where id = b.id;
+  perform private.log_event(b.id, b.state, 'COLLECTED', v_ev, null, null, null);
+end;
+$$;
+
+create function public.lp_record_receipt(
+  p_batch_id uuid, p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare b public.batches; v_ev uuid;
+begin
+  b := private.lock_batch(p_batch_id, 'processor');
+  perform private.require_state(b, array['COLLECTED']::public.batch_state[]);
+  v_ev := private.add_evidence(b.id, 'receipt_record', null, p_sha256, p_storage_path, p_byte_size, p_mime_type);
+  update public.batches set state = 'RECEIVED' where id = b.id;
+  perform private.log_event(b.id, b.state, 'RECEIVED', v_ev, null, null, null);
+end;
+$$;
+
+-- Shared internal implementation for submitProcessing (from RECEIVED) and resubmitProcessing (from RETURNED).
+create function private.submit_processing_internal(
+  p_batch_id uuid, p_expected_state public.batch_state, p_outputs jsonb,
+  p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  b       public.batches;
+  v_ev    uuid;
+  v_rev   integer;
+  v_total bigint := 0;
+  v_n     integer;
+  o       record;
+begin
+  b := private.lock_batch(p_batch_id, 'processor');
+  perform private.require_state(b, array[p_expected_state]);
+
+  if p_outputs is null or jsonb_typeof(p_outputs) <> 'array' then
+    raise exception 'outputs must be a JSON array' using errcode = '22023';
+  end if;
+  v_n := jsonb_array_length(p_outputs);
+  if v_n < 1 or v_n > 16 then
+    raise exception 'between 1 and 16 outputs are required' using errcode = '22023';
+  end if;
+
+  v_rev := b.current_revision + 1;
+  v_ev := private.add_evidence(b.id, 'processing_claim', v_rev, p_sha256, p_storage_path, p_byte_size, p_mime_type);
+
+  -- Validate every output and compute the total BEFORE writing the revision rows.
+  for o in
+    select (e ->> 'material_code')::integer as material_code,
+           (e ->> 'mass_grams')::bigint     as mass_grams
+    from jsonb_array_elements(p_outputs) e
+  loop
+    if o.material_code is null or o.material_code not between 1 and 65535 or o.mass_grams is null or o.mass_grams <= 0 then
+      raise exception 'invalid output entry' using errcode = '22023';
+    end if;
+    if o.mass_grams > b.intake_mass_grams then            -- also prevents overflow while summing
+      raise exception 'mass balance exceeded' using errcode = '22023';
+    end if;
+    v_total := v_total + o.mass_grams;
+  end loop;
+  if v_total > b.intake_mass_grams then                   -- MVP mass-balance rule
+    raise exception 'mass balance exceeded: outputs % g > intake % g', v_total, b.intake_mass_grams using errcode = '22023';
+  end if;
+
+  insert into public.processing_revisions (batch_id, revision, evidence_id, total_output_grams, created_by)
+  values (b.id, v_rev, v_ev, v_total, auth.uid());
+
+  insert into public.processing_outputs (batch_id, revision, position, material_code, mass_grams)
+  select b.id, v_rev, t.ord::smallint, (t.e ->> 'material_code')::integer, (t.e ->> 'mass_grams')::bigint
+  from jsonb_array_elements(p_outputs) with ordinality as t(e, ord);
+
+  update public.batches set state = 'PROCESSED_CLAIMED', current_revision = v_rev where id = b.id;
+  perform private.log_event(b.id, b.state, 'PROCESSED_CLAIMED', v_ev, v_rev, null, null);
+end;
+$$;
+
+-- Submit initial processing claim (only from RECEIVED). p_outputs: [{"material_code":int,"mass_grams":int}, ...]
+create function public.lp_submit_processing(
+  p_batch_id uuid, p_outputs jsonb,
+  p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns void
+language sql security definer set search_path = '' as $$
+  select private.submit_processing_internal(
+    p_batch_id, 'RECEIVED'::public.batch_state, p_outputs,
+    p_sha256, p_storage_path, p_byte_size, p_mime_type
+  );
+$$;
+
+-- Resubmit processing claim (only from RETURNED). Replaces current outputs while preserving revision history (D-13).
+create function public.lp_resubmit_processing(
+  p_batch_id uuid, p_outputs jsonb,
+  p_sha256 bytea, p_storage_path text, p_byte_size bigint, p_mime_type text)
+returns void
+language sql security definer set search_path = '' as $$
+  select private.submit_processing_internal(
+    p_batch_id, 'RETURNED'::public.batch_state, p_outputs,
+    p_sha256, p_storage_path, p_byte_size, p_mime_type
+  );
+$$;
+
+create function public.lp_verify_batch(p_batch_id uuid, p_checklist jsonb default '{}'::jsonb)
+returns void language sql security definer set search_path = '' as $$
+  select private.decide(p_batch_id, 'verified', null, null, p_checklist);
+$$;
+
+create function public.lp_return_batch(p_batch_id uuid, p_reason public.return_reason, p_checklist jsonb default '{}'::jsonb)
+returns void language sql security definer set search_path = '' as $$
+  select private.decide(p_batch_id, 'returned', p_reason, null, p_checklist);
+$$;
+
+create function public.lp_reject_batch(p_batch_id uuid, p_reason public.reject_reason, p_checklist jsonb default '{}'::jsonb)
+returns void language sql security definer set search_path = '' as $$
+  select private.decide(p_batch_id, 'rejected', null, p_reason, p_checklist);
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 10. Function privileges: deny by default, then grant exactly what is needed
+-- ---------------------------------------------------------------------------
+revoke all on all functions in schema private from public, anon, authenticated;
+grant execute on function private.transition_allowed(public.batch_state, public.batch_state) to authenticated, service_role;
+grant execute on function private.is_batch_participant(uuid)  to authenticated;
+grant execute on function private.storage_batch_id(text)      to authenticated;
+grant execute on function private.can_upload_evidence(text)   to authenticated;
+
+revoke all on function
+  public.lp_register_batch(bytea, integer, uuid, uuid, uuid),
+  public.lp_cancel_batch(uuid),
+  public.lp_record_collection(uuid, bigint, bytea, text, bigint, text),
+  public.lp_record_receipt(uuid, bytea, text, bigint, text),
+  public.lp_submit_processing(uuid, jsonb, bytea, text, bigint, text),
+  public.lp_resubmit_processing(uuid, jsonb, bytea, text, bigint, text),
+  public.lp_verify_batch(uuid, jsonb),
+  public.lp_return_batch(uuid, public.return_reason, jsonb),
+  public.lp_reject_batch(uuid, public.reject_reason, jsonb)
+  from public, anon, authenticated;
+
+grant execute on function
+  public.lp_register_batch(bytea, integer, uuid, uuid, uuid),
+  public.lp_cancel_batch(uuid),
+  public.lp_record_collection(uuid, bigint, bytea, text, bigint, text),
+  public.lp_record_receipt(uuid, bytea, text, bigint, text),
+  public.lp_submit_processing(uuid, jsonb, bytea, text, bigint, text),
+  public.lp_resubmit_processing(uuid, jsonb, bytea, text, bigint, text),
+  public.lp_verify_batch(uuid, jsonb),
+  public.lp_return_batch(uuid, public.return_reason, jsonb),
+  public.lp_reject_batch(uuid, public.reject_reason, jsonb)
+  to authenticated;

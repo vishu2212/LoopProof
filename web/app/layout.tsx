@@ -33,6 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" className="sidebar__link sidebar__link--active"><span>▦</span>Overview</Link>
               <Link href="/#batches-title" className="sidebar__link"><span>◇</span>Batches</Link>
               <Link href="/#review-queue-title" className="sidebar__link"><span>≡</span>Evidence Review</Link>
+              <Link href="/live-batches" className="sidebar__link"><span>◉</span>Live Registry</Link>
+              <Link href="/login" className="sidebar__link"><span>⚿</span>Sign In</Link>
               <Link href="/" className="sidebar__link"><span>▤</span>Organizations</Link>
               <Link href="/" className="sidebar__link"><span>↗</span>Public Proofs</Link>
               <Link href="/" className="sidebar__link"><span>⚙</span>Settings</Link>
