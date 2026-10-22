@@ -579,6 +579,42 @@ export function computeEvidenceSha256Hex(bytes: Uint8Array): string {
   return `\\x${hex}`;
 }
 
+/**
+ * Lightweight file-signature check to catch obvious MIME spoofing before upload.
+ * This is not a malware scan or a full parser; the Storage bucket must also enforce
+ * size/type limits and the verifier must inspect evidence contents.
+ */
+export function evidenceMatchesMimeSignature(
+  bytes: Uint8Array,
+  mimeType: string,
+): boolean {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) return false;
+
+  const normalizedMime = (mimeType ?? "").trim().toLowerCase();
+  if (normalizedMime === "application/pdf") {
+    // PDF headers are expected near the beginning; allow a small leading prefix (up to 1024 bytes per ISO 32000-1).
+    const prefix = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.byteLength, 1024)));
+    return prefix.includes("%PDF-");
+  }
+  if (normalizedMime === "image/jpeg") {
+    return bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (normalizedMime === "image/png") {
+    return (
+      bytes.byteLength >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    );
+  }
+  return false;
+}
+
 export function validateAndPrepareEvidence(
   batchId: string,
   evidence: EvidenceUploadInput | null | undefined,
@@ -618,6 +654,14 @@ export function validateAndPrepareEvidence(
       code: "INVALID_EVIDENCE",
       error:
         "Evidence file MIME type must be application/pdf, image/jpeg, or image/png (as enforced by public.evidence_mime_type_check).",
+    };
+  }
+
+  if (!evidenceMatchesMimeSignature(evidence.bytes, mimeType)) {
+    return {
+      ok: false,
+      code: "INVALID_EVIDENCE",
+      error: "Evidence file content does not match its declared PDF, JPEG, or PNG MIME type.",
     };
   }
 
@@ -776,6 +820,69 @@ export type BatchContextForValidation = Pick<
   claimed_output_grams?: number | null;
 };
 
+/**
+ * Idempotently reconciles client state after a network timeout or ambiguous RPC failure.
+ * If the batch has already reached the target state and the evidence row exists with the
+ * expected SHA-256 (or storage path), the operation succeeded previously and is treated as success.
+ * This avoids duplicate mutations while protecting against destructive deletion of committed evidence.
+ */
+export async function reconcileEvidenceState(
+  client: SupabaseLikeClient,
+  batchId: string,
+  targetState: BatchState,
+  sha256Hex: string,
+  storagePath?: string,
+  totalOutputGrams?: number,
+): Promise<LifecycleMutationResult | null> {
+  try {
+    const batchQuery = client.from("batches").select("id, state").eq("id", batchId);
+    const { data: batchData, error: batchErr } =
+      typeof batchQuery?.maybeSingle === "function"
+        ? await batchQuery.maybeSingle()
+        : await batchQuery;
+
+    const row = Array.isArray(batchData) ? batchData[0] : batchData;
+    if (batchErr || !row || (row as { state?: string }).state !== targetState) {
+      return null;
+    }
+
+    const evQuery = client
+      .from("evidence")
+      .select("id, sha256, storage_path")
+      .eq("batch_id", batchId);
+    const { data: evData, error: evErr } =
+      typeof evQuery?.maybeSingle === "function"
+        ? await evQuery
+        : await evQuery;
+
+    const evList = Array.isArray(evData) ? evData : evData ? [evData] : [];
+    if (evErr || evList.length === 0) {
+      return null;
+    }
+
+    const normalizedExpectedSha = sha256Hex.replace(/^\\x/i, "").toLowerCase();
+    const matchingRow = evList.find((item: { sha256?: string; storage_path?: string }) => {
+      const rowSha = String(item.sha256 ?? "").replace(/^\\x/i, "").toLowerCase();
+      return rowSha === normalizedExpectedSha;
+    });
+
+    if (!matchingRow) {
+      return null;
+    }
+
+    return {
+      ok: true,
+      batchId,
+      nextState: targetState as Exclude<BatchState, "NONE">,
+      sha256Hex,
+      storagePath: matchingRow.storage_path ?? storagePath,
+      ...(typeof totalOutputGrams === "number" ? { totalOutputGrams } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type RecordCollectionInput = {
   batchId: string;
   intakeMassGrams: number;
@@ -867,6 +974,16 @@ export async function recordCollectionWithRpc(
     });
 
   if (uploadError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "COLLECTED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "STORAGE_ERROR",
@@ -884,6 +1001,16 @@ export async function recordCollectionWithRpc(
   });
 
   if (rpcError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "COLLECTED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "RPC_ERROR",
@@ -980,6 +1107,16 @@ export async function recordReceiptWithRpc(
     });
 
   if (uploadError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "RECEIVED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "STORAGE_ERROR",
@@ -996,6 +1133,16 @@ export async function recordReceiptWithRpc(
   });
 
   if (rpcError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "RECEIVED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "RPC_ERROR",
@@ -1104,6 +1251,17 @@ export async function submitProcessingWithRpc(
     });
 
   if (uploadError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "PROCESSED_CLAIMED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+      outputsCheck.totalOutputGrams,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "STORAGE_ERROR",
@@ -1123,6 +1281,17 @@ export async function submitProcessingWithRpc(
   });
 
   if (rpcError) {
+    const reconciled = await reconcileEvidenceState(
+      client,
+      normalizedBatchId,
+      "PROCESSED_CLAIMED",
+      prepared.sha256Hex,
+      prepared.storagePath,
+      outputsCheck.totalOutputGrams,
+    );
+    if (reconciled) {
+      return reconciled;
+    }
     return {
       ok: false,
       code: "RPC_ERROR",

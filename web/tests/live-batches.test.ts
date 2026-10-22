@@ -18,6 +18,7 @@ import {
   cancelBatchWithRpc,
   computeEvidenceSha256Hex,
   decideBatchWithRpc,
+  evidenceMatchesMimeSignature,
   formatByteaHex,
   formatDatabaseError,
   generateClaimKeyHex,
@@ -25,6 +26,7 @@ import {
   getVerifierDecisionSubmitLabel,
   hasMassDiscrepancy,
   isValidUuid,
+  reconcileEvidenceState,
   recordCollectionWithRpc,
   recordReceiptWithRpc,
   registerBatchWithRpc,
@@ -59,6 +61,14 @@ interface MockClientOptions {
   rpcResult?: string | null;
   rpcError?: { message: string; code?: string; details?: string } | null;
   onRpc?: (fn: string, args: Record<string, unknown>) => void;
+  mockBatches?: Array<{ id: string; state: string; [key: string]: unknown }>;
+  mockEvidence?: Array<{
+    id: string;
+    batch_id: string;
+    sha256: string;
+    storage_path: string;
+    [key: string]: unknown;
+  }>;
 }
 
 function createMockSupabaseClient(options: MockClientOptions): SupabaseLikeClient {
@@ -92,14 +102,32 @@ function createMockSupabaseClient(options: MockClientOptions): SupabaseLikeClien
       return {
         select(_columns: string) {
           return {
-            async eq(_column: string, _value: string) {
+            eq(_column: string, _value: string) {
+              let resultData: unknown = [];
+              let resultError: unknown = null;
               if (table === "user_roles") {
-                return {
-                  data: (options.roles ?? []).map((role) => ({ role })),
-                  error: options.rolesError ?? null,
-                };
+                resultData = (options.roles ?? []).map((role) => ({ role }));
+                resultError = options.rolesError ?? null;
+              } else if (table === "batches") {
+                resultData = (options.mockBatches ?? []).filter(
+                  (b) =>
+                    String(b[_column] ?? "").toLowerCase() ===
+                    String(_value ?? "").toLowerCase(),
+                );
+              } else if (table === "evidence") {
+                resultData = (options.mockEvidence ?? []).filter(
+                  (e) =>
+                    String(e[_column] ?? "").toLowerCase() ===
+                    String(_value ?? "").toLowerCase(),
+                );
               }
-              return { data: [], error: null };
+              const promise = Promise.resolve({ data: resultData, error: resultError });
+              return Object.assign(promise, {
+                maybeSingle: async () => {
+                  const arr = Array.isArray(resultData) ? resultData : [];
+                  return { data: arr[0] ?? null, error: resultError };
+                },
+              });
             },
           };
         },
@@ -498,8 +526,25 @@ describe("Role/state visibility for live lifecycle actions (resolveBatchLifecycl
 
 describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar", () => {
   const samplePdfBytes = new TextEncoder().encode("%PDF-1.7 sample evidence content");
+  const samplePngBytes = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  ]);
+  const sampleJpegBytes = new Uint8Array([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00,
+  ]);
 
   it("validates evidence files, MIME types, and SHA-256 digests", () => {
+    // File signature verification
+    assert.equal(evidenceMatchesMimeSignature(samplePdfBytes, "application/pdf"), true);
+    assert.equal(evidenceMatchesMimeSignature(samplePngBytes, "image/png"), true);
+    assert.equal(evidenceMatchesMimeSignature(sampleJpegBytes, "image/jpeg"), true);
+    assert.equal(evidenceMatchesMimeSignature(samplePdfBytes, "image/png"), false);
+    assert.equal(evidenceMatchesMimeSignature(samplePngBytes, "application/pdf"), false);
+    assert.equal(evidenceMatchesMimeSignature(sampleJpegBytes, "application/pdf"), false);
+    assert.equal(evidenceMatchesMimeSignature(new Uint8Array([1, 2, 3]), "image/jpeg"), false);
+    assert.equal(evidenceMatchesMimeSignature(new Uint8Array(0), "application/pdf"), false);
+    assert.equal(evidenceMatchesMimeSignature(samplePdfBytes, "application/json"), false);
+
     assert.equal(MATERIAL_OPTIONS.length >= 8, true);
     assert.equal(isValidMaterialCode(201), true);
     assert.equal(isValidMaterialCode(0), false);
@@ -524,6 +569,18 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     assert.equal(badMimeRes.ok, false);
     if (!badMimeRes.ok) assert.equal(badMimeRes.code, "INVALID_EVIDENCE");
 
+    // Spoofed content (content does not match declared MIME)
+    const spoofedRes = validateAndPrepareEvidence(
+      CREATED_BATCH_ID,
+      { bytes: new TextEncoder().encode("not a real PDF file"), mimeType: "application/pdf" },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(spoofedRes.ok, false);
+    if (!spoofedRes.ok) {
+      assert.equal(spoofedRes.code, "INVALID_EVIDENCE");
+      assert.match(spoofedRes.error, /does not match its declared/i);
+    }
+
     const validRes = validateAndPrepareEvidence(
       CREATED_BATCH_ID,
       { bytes: samplePdfBytes, mimeType: "application/pdf" },
@@ -536,6 +593,13 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
       assert.equal(validRes.prepared.mimeType, "application/pdf");
       assert.equal(validRes.prepared.sha256Hex, sha);
     }
+
+    const validPngRes = validateAndPrepareEvidence(
+      CREATED_BATCH_ID,
+      { bytes: samplePngBytes, mimeType: "image/png" },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(validPngRes.ok, true);
   });
 
   it("Collector: uploads evidence and calls public.lp_record_collection with intake mass and SHA-256", async () => {
@@ -585,9 +649,13 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
   });
 
   it("Collector: rejects invalid intake mass, missing role, wrong state, storage error, and RPC error", async () => {
+    let uploadAttempts = 0;
     const client = createMockSupabaseClient({
       user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
       roles: ["collector"],
+      onUpload: () => {
+        uploadAttempts++;
+      },
     });
 
     const badMass = await recordCollectionWithRpc(client, {
@@ -598,6 +666,7 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     });
     assert.equal(badMass.ok, false);
     if (!badMass.ok) assert.equal(badMass.code, "INVALID_INTAKE_MASS");
+    assert.equal(uploadAttempts, 0);
 
     const wrongState = await recordCollectionWithRpc(client, {
       batchId: CREATED_BATCH_ID,
@@ -607,6 +676,7 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     });
     assert.equal(wrongState.ok, false);
     if (!wrongState.ok) assert.equal(wrongState.code, "INVALID_STATE");
+    assert.equal(uploadAttempts, 0);
 
     const storageFailClient = createMockSupabaseClient({
       user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
@@ -667,7 +737,7 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
       client,
       {
         batchId: CREATED_BATCH_ID,
-        evidence: { bytes: samplePdfBytes, mimeType: "image/png" },
+        evidence: { bytes: samplePngBytes, mimeType: "image/png" },
         batch: makeBatchContext({ state: "COLLECTED", intake_mass_grams: 10000 }),
       },
       () => FIXED_OBJECT_ID,
@@ -739,6 +809,34 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     const emptyOutputs = validateProcessingOutputs([], 10000);
     assert.equal(emptyOutputs.ok, false);
     if (!emptyOutputs.ok) assert.equal(emptyOutputs.code, "INVALID_OUTPUTS");
+
+    // Pre-upload output check prevents orphaned storage objects
+    let uploadAttempts = 0;
+    const preUploadCheckClient = createMockSupabaseClient({
+      user: { id: VALID_PROCESSOR_ID, email: "processor@example.org" },
+      roles: ["processor"],
+      onUpload: () => {
+        uploadAttempts++;
+      },
+    });
+    const badOutputsRes = await submitProcessingWithRpc(
+      preUploadCheckClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        mode: "submit",
+        intakeMassGrams: 10000,
+        outputs: [
+          { material_code: 201, mass_grams: 6000 },
+          { material_code: 202, mass_grams: 5000 },
+        ],
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "RECEIVED", intake_mass_grams: 10000 }),
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(badOutputsRes.ok, false);
+    if (!badOutputsRes.ok) assert.equal(badOutputsRes.code, "MASS_BALANCE_EXCEEDED");
+    assert.equal(uploadAttempts, 0);
 
     // Duplicate evidence SHA-256 hash rejected by database
     const dupHashClient = createMockSupabaseClient({
@@ -1156,6 +1254,163 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     });
     assert.equal(cancelAfterCollection.ok, false);
     if (!cancelAfterCollection.ok) assert.equal(cancelAfterCollection.code, "INVALID_STATE");
+  });
+
+  it("idempotently reconciles lifecycle state on ambiguous network timeouts or retry submissions", async () => {
+    const testPdfSha = computeEvidenceSha256Hex(samplePdfBytes);
+    const fixedStoragePath = `${CREATED_BATCH_ID}/${FIXED_OBJECT_ID}`;
+
+    // 1. Database RPC fails with ambiguous error / timeout, but transaction actually committed
+    const committedClient = createMockSupabaseClient({
+      user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
+      roles: ["collector"],
+      rpcError: { code: "55000", message: "invalid transition from COLLECTED" },
+      mockBatches: [{ id: CREATED_BATCH_ID, state: "COLLECTED" }],
+      mockEvidence: [
+        {
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          batch_id: CREATED_BATCH_ID,
+          sha256: testPdfSha,
+          storage_path: fixedStoragePath,
+        },
+      ],
+    });
+
+    const reconciledRes = await recordCollectionWithRpc(
+      committedClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        intakeMassGrams: 5000,
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(reconciledRes.ok, true);
+    if (reconciledRes.ok) {
+      assert.equal(reconciledRes.nextState, "COLLECTED");
+      assert.equal(reconciledRes.sha256Hex, testPdfSha);
+      assert.equal(reconciledRes.storagePath, fixedStoragePath);
+    }
+
+    // 2. Storage upload fails on retry because object already exists, but batch is already COLLECTED
+    const storageRetryClient = createMockSupabaseClient({
+      user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
+      roles: ["collector"],
+      storageError: { message: "The resource already exists", statusCode: "409" },
+      mockBatches: [{ id: CREATED_BATCH_ID, state: "COLLECTED" }],
+      mockEvidence: [
+        {
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          batch_id: CREATED_BATCH_ID,
+          sha256: testPdfSha,
+          storage_path: fixedStoragePath,
+        },
+      ],
+    });
+
+    const storageRetryRes = await recordCollectionWithRpc(
+      storageRetryClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        intakeMassGrams: 5000,
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(storageRetryRes.ok, true);
+    if (storageRetryRes.ok) {
+      assert.equal(storageRetryRes.nextState, "COLLECTED");
+    }
+
+    // 3. RPC genuine failure: batch did NOT transition -> surfaces the real RPC error
+    const uncommittedClient = createMockSupabaseClient({
+      user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
+      roles: ["collector"],
+      rpcError: { code: "42501", message: "caller is not the collector assigned to this batch" },
+      mockBatches: [{ id: CREATED_BATCH_ID, state: "REGISTERED" }],
+      mockEvidence: [],
+    });
+
+    const failedRes = await recordCollectionWithRpc(
+      uncommittedClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        intakeMassGrams: 5000,
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(failedRes.ok, false);
+    if (!failedRes.ok) {
+      assert.equal(failedRes.code, "RPC_ERROR");
+      assert.match(failedRes.error, /caller is not the collector assigned to this batch/i);
+    }
+
+    // 4. Processing claim reconciliation preserves totalOutputGrams
+    const processingCommittedClient = createMockSupabaseClient({
+      user: { id: VALID_PROCESSOR_ID, email: "processor@example.org" },
+      roles: ["processor"],
+      rpcError: { code: "55000", message: "invalid transition from PROCESSED_CLAIMED" },
+      mockBatches: [{ id: CREATED_BATCH_ID, state: "PROCESSED_CLAIMED" }],
+      mockEvidence: [
+        {
+          id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          batch_id: CREATED_BATCH_ID,
+          sha256: testPdfSha,
+          storage_path: fixedStoragePath,
+        },
+      ],
+    });
+
+    const procReconciled = await submitProcessingWithRpc(
+      processingCommittedClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        mode: "submit",
+        intakeMassGrams: 10000,
+        outputs: [
+          { material_code: 201, mass_grams: 5000 },
+          { material_code: 204, mass_grams: 3000 },
+        ],
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "RECEIVED", intake_mass_grams: 10000 }),
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(procReconciled.ok, true);
+    if (procReconciled.ok) {
+      assert.equal(procReconciled.nextState, "PROCESSED_CLAIMED");
+      assert.equal(procReconciled.totalOutputGrams, 8000);
+    }
+
+    // 5. Direct reconcileEvidenceState unit tests
+    const directReconciled = await reconcileEvidenceState(
+      committedClient,
+      CREATED_BATCH_ID,
+      "COLLECTED",
+      testPdfSha,
+      fixedStoragePath,
+    );
+    assert.notEqual(directReconciled, null);
+    assert.equal(directReconciled?.ok, true);
+
+    const directMismatchSha = await reconcileEvidenceState(
+      committedClient,
+      CREATED_BATCH_ID,
+      "COLLECTED",
+      "\\x1111111111111111111111111111111111111111111111111111111111111111",
+      fixedStoragePath,
+    );
+    assert.equal(directMismatchSha, null);
+
+    const directMismatchState = await reconcileEvidenceState(
+      committedClient,
+      CREATED_BATCH_ID,
+      "RECEIVED",
+      testPdfSha,
+      fixedStoragePath,
+    );
+    assert.equal(directMismatchState, null);
   });
 });
 

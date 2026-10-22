@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   cancelBatchWithRpc,
+  isValidUuid,
   recordCollectionWithRpc,
   recordReceiptWithRpc,
   registerBatchWithRpc,
   submitProcessingWithRpc,
   submitVerifierDecisionFormData,
+  validateProcessingOutputs,
   validateVerifierDecisionReason,
   type BatchContextForValidation,
   type EvidenceUploadInput,
@@ -165,12 +167,19 @@ export async function recordCollectionAction(
   const batchId = String(formData.get("batchId") ?? "").trim();
   const intakeMassGrams = Number(formData.get("intakeMassGrams") ?? 0);
 
-  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
-  if (!fileRes.ok) {
+  if (!isValidUuid(batchId)) {
     return {
       status: "error",
-      code: fileRes.code,
-      message: fileRes.message,
+      code: "INVALID_UUID",
+      message: "Batch ID must be a valid UUID.",
+    };
+  }
+
+  if (!Number.isInteger(intakeMassGrams) || intakeMassGrams <= 0) {
+    return {
+      status: "error",
+      code: "INVALID_INTAKE_MASS",
+      message: "Intake mass must be a whole number greater than 0 grams.",
     };
   }
 
@@ -186,6 +195,31 @@ export async function recordCollectionAction(
   }
 
   const batchCtx = await fetchBatchContext(supabase, batchId);
+  if (!batchCtx) {
+    return {
+      status: "error",
+      code: "NOT_FOUND",
+      message: "Batch not found or not accessible.",
+    };
+  }
+
+  if (batchCtx.state !== "REGISTERED") {
+    return {
+      status: "error",
+      code: "INVALID_STATE",
+      message: `Collection can only be recorded when the batch is in REGISTERED state (current state: ${batchCtx.state}).`,
+    };
+  }
+
+  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
+  if (!fileRes.ok) {
+    return {
+      status: "error",
+      code: fileRes.code,
+      message: fileRes.message,
+    };
+  }
+
   const result = await recordCollectionWithRpc(supabase, {
     batchId,
     intakeMassGrams,
@@ -216,12 +250,11 @@ export async function recordReceiptAction(
 ): Promise<LifecycleFormState> {
   const batchId = String(formData.get("batchId") ?? "").trim();
 
-  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
-  if (!fileRes.ok) {
+  if (!isValidUuid(batchId)) {
     return {
       status: "error",
-      code: fileRes.code,
-      message: fileRes.message,
+      code: "INVALID_UUID",
+      message: "Batch ID must be a valid UUID.",
     };
   }
 
@@ -237,6 +270,31 @@ export async function recordReceiptAction(
   }
 
   const batchCtx = await fetchBatchContext(supabase, batchId);
+  if (!batchCtx) {
+    return {
+      status: "error",
+      code: "NOT_FOUND",
+      message: "Batch not found or not accessible.",
+    };
+  }
+
+  if (batchCtx.state !== "COLLECTED") {
+    return {
+      status: "error",
+      code: "INVALID_STATE",
+      message: `Facility receipt can only be recorded when the batch is in COLLECTED state (current state: ${batchCtx.state}).`,
+    };
+  }
+
+  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
+  if (!fileRes.ok) {
+    return {
+      status: "error",
+      code: fileRes.code,
+      message: fileRes.message,
+    };
+  }
+
   const result = await recordReceiptWithRpc(supabase, {
     batchId,
     evidence: fileRes.evidence,
@@ -267,8 +325,15 @@ export async function submitProcessingAction(
   const batchId = String(formData.get("batchId") ?? "").trim();
   const modeRaw = String(formData.get("mode") ?? "submit").trim();
   const mode: "submit" | "resubmit" = modeRaw === "resubmit" ? "resubmit" : "submit";
-  const intakeMassGrams = Number(formData.get("intakeMassGrams") ?? 0);
   const outputsJson = String(formData.get("outputsJson") ?? "[]");
+
+  if (!isValidUuid(batchId)) {
+    return {
+      status: "error",
+      code: "INVALID_UUID",
+      message: "Batch ID must be a valid UUID.",
+    };
+  }
 
   let outputs: ProcessingOutputInput[];
   try {
@@ -285,15 +350,6 @@ export async function submitProcessingAction(
     };
   }
 
-  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
-  if (!fileRes.ok) {
-    return {
-      status: "error",
-      code: fileRes.code,
-      message: fileRes.message,
-    };
-  }
-
   let supabase;
   try {
     supabase = await createSupabaseServerClient();
@@ -306,10 +362,54 @@ export async function submitProcessingAction(
   }
 
   const batchCtx = await fetchBatchContext(supabase, batchId);
+  if (!batchCtx) {
+    return {
+      status: "error",
+      code: "NOT_FOUND",
+      message: "Batch not found or not accessible.",
+    };
+  }
+
+  const expectedState = mode === "resubmit" ? "RETURNED" : "RECEIVED";
+  if (batchCtx.state !== expectedState) {
+    return {
+      status: "error",
+      code: "INVALID_STATE",
+      message: `Processing claim (${mode}) requires batch state ${expectedState} (current state: ${batchCtx.state}).`,
+    };
+  }
+
+  const intakeMassGrams = batchCtx.intake_mass_grams;
+  if (!intakeMassGrams || intakeMassGrams <= 0) {
+    return {
+      status: "error",
+      code: "INVALID_INTAKE_MASS",
+      message: "Batch intake mass is missing or invalid in recorded batch state.",
+    };
+  }
+
+  const outputsCheck = validateProcessingOutputs(outputs, intakeMassGrams);
+  if (!outputsCheck.ok) {
+    return {
+      status: "error",
+      code: outputsCheck.code,
+      message: outputsCheck.error,
+    };
+  }
+
+  const fileRes = await extractEvidenceFromFormData(formData, "evidenceFile");
+  if (!fileRes.ok) {
+    return {
+      status: "error",
+      code: fileRes.code,
+      message: fileRes.message,
+    };
+  }
+
   const result = await submitProcessingWithRpc(supabase, {
     batchId,
     mode,
-    intakeMassGrams: batchCtx?.intake_mass_grams ?? intakeMassGrams,
+    intakeMassGrams,
     outputs,
     evidence: fileRes.evidence,
     batch: batchCtx,
@@ -342,16 +442,11 @@ export async function verifierDecisionAction(
   const returnReasonRaw = formData.get("returnReason");
   const rejectReasonRaw = formData.get("rejectReason");
 
-  const reasonCheck = validateVerifierDecisionReason(
-    decisionRaw,
-    returnReasonRaw !== null ? String(returnReasonRaw) : null,
-    rejectReasonRaw !== null ? String(rejectReasonRaw) : null,
-  );
-  if (!reasonCheck.ok) {
+  if (!isValidUuid(batchId)) {
     return {
       status: "error",
-      code: reasonCheck.code,
-      message: reasonCheck.error,
+      code: "INVALID_UUID",
+      message: "Batch ID must be a valid UUID.",
     };
   }
 
@@ -367,6 +462,39 @@ export async function verifierDecisionAction(
   }
 
   const batchCtx = await fetchBatchContext(supabase, batchId);
+  if (!batchCtx) {
+    return {
+      status: "error",
+      code: "NOT_FOUND",
+      message: "Batch not found or not accessible.",
+    };
+  }
+
+  if (batchCtx.state !== "PROCESSED_CLAIMED") {
+    return {
+      status: "error",
+      code: "INVALID_STATE",
+      message: `Verifier decisions are only allowed when the batch is in PROCESSED_CLAIMED state (current state: ${batchCtx.state}).`,
+    };
+  }
+
+  const reasonCheck = validateVerifierDecisionReason(
+    decisionRaw,
+    returnReasonRaw !== null ? String(returnReasonRaw) : null,
+    rejectReasonRaw !== null ? String(rejectReasonRaw) : null,
+    {
+      intakeMassGrams: batchCtx.intake_mass_grams,
+      claimedOutputGrams: batchCtx.claimed_output_grams,
+    },
+  );
+  if (!reasonCheck.ok) {
+    return {
+      status: "error",
+      code: reasonCheck.code,
+      message: reasonCheck.error,
+    };
+  }
+
   const result = await submitVerifierDecisionFormData(supabase, formData, batchCtx);
   if (result.status === "error") {
     return {
@@ -392,6 +520,14 @@ export async function cancelBatchAction(
 ): Promise<LifecycleFormState> {
   const batchId = String(formData.get("batchId") ?? "").trim();
 
+  if (!isValidUuid(batchId)) {
+    return {
+      status: "error",
+      code: "INVALID_UUID",
+      message: "Batch ID must be a valid UUID.",
+    };
+  }
+
   let supabase;
   try {
     supabase = await createSupabaseServerClient();
@@ -404,6 +540,22 @@ export async function cancelBatchAction(
   }
 
   const batchCtx = await fetchBatchContext(supabase, batchId);
+  if (!batchCtx) {
+    return {
+      status: "error",
+      code: "NOT_FOUND",
+      message: "Batch not found or not accessible.",
+    };
+  }
+
+  if (batchCtx.state !== "REGISTERED") {
+    return {
+      status: "error",
+      code: "INVALID_STATE",
+      message: `Batch cancellation is only allowed when the batch is in REGISTERED state (current state: ${batchCtx.state}).`,
+    };
+  }
+
   const result = await cancelBatchWithRpc(supabase, {
     batchId,
     batch: batchCtx,
