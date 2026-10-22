@@ -13,6 +13,7 @@ import {
   type LiveBatchRow,
 } from "@/lib/live-batches";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { getSupabaseEnv } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,17 @@ export const metadata: Metadata = {
 
 export default async function LiveBatchesPage() {
   let supabase;
+  let supabaseProject = "configured project";
   try {
     supabase = await createSupabaseServerClient();
+    try {
+      const { url } = getSupabaseEnv();
+      const hostname = new URL(url).hostname;
+      const refMatch = hostname.match(/^([a-z0-9_-]+)\.supabase\.co$/i);
+      supabaseProject = refMatch ? refMatch[1] : hostname;
+    } catch {
+      // Keep fallback
+    }
   } catch (err) {
     return (
       <div className="page">
@@ -96,7 +106,7 @@ export default async function LiveBatchesPage() {
       <header className="page-header">
         <h1>Live Batch Registry</h1>
         <p className="lede">
-          Connected to Supabase project <code>tvsjrxjvmebbofjdzxnm</code>. Only batches where your
+          Connected to Supabase project <code>{supabaseProject}</code>. Only batches where your
           authenticated account is an assigned participant are returned by Row Level Security.
           Synthetic demo records are never shown here.
         </p>
