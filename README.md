@@ -10,6 +10,8 @@ LoopProof models an e-waste batch through explicit custody and review stages, se
 - **Source repository:** https://github.com/vishu2212/LoopProof
 - **Track:** Sustainable Supply Chains
 
+![LoopProof Material Traceability Dashboard](docs/screenshots/dashboard.png)
+
 ---
 
 ## The Problem
@@ -28,6 +30,25 @@ E-waste collection, facility receipt, processing claims, and verified processing
 - Checks processing mass totals against intake ($Output \le Intake$). A balanced claim cannot be returned with `MASS_DISCREPANCY`.
 - Gates environmental impact display: no numerical impact estimate is shown before `VERIFIED`; verification alone is not enough without complete evidence and cited public factors.
 - Keeps the human responsible for confirming the e-waste category; AI assistance is advisory, not proof.
+
+---
+
+## Application Walkthrough & Key Verification Flows
+
+The web application provides an interactive, evidence-gated ledger illustrating core governance rules across canonical lifecycle stages:
+
+| Screen / Flow | Evidence & Governance State | Key Principles Demonstrated |
+| :--- | :--- | :--- |
+| **Material Traceability Dashboard**<br>`/` | Multi-batch pipeline across all lifecycle stages | Full pipeline visibility from collection to verification. Highlights mass conservation, review queue, and active custody. |
+| **Independent Verifier Review**<br>`/batches/DEMO-002` | `PROCESSED_CLAIMED` → Verifier Review | [5-criterion audit checklist](docs/screenshots/demo-002-pending-review.png), distinct evidence digests, custody timeline, and mass-balance checks ($Output \le Intake$). |
+| **Alternative Outcome: Returned**<br>`/batches/DEMO-004` | Alternative outcome: `RETURNED` | [Typed return reason](docs/screenshots/demo-004-returned.png) (`INSUFFICIENT_EVIDENCE`), remediation guidance, and unverified status disclosure. |
+| **Verified & Impact Gated**<br>`/batches/DEMO-005` | Canonical stage: `VERIFIED` | [Independent acceptance](docs/screenshots/demo-005-verified.png). Environmental impact remains strictly **Unavailable** because avoided burden is never claimed without complete evidence and cited public factors. |
+
+> All four screenshots are available in high resolution within the [`docs/screenshots/`](docs/screenshots/) directory:
+> - [`docs/screenshots/dashboard.png`](docs/screenshots/dashboard.png) — Operational custody dashboard
+> - [`docs/screenshots/demo-002-pending-review.png`](docs/screenshots/demo-002-pending-review.png) — Batch pending verifier review with 5-criterion checklist
+> - [`docs/screenshots/demo-004-returned.png`](docs/screenshots/demo-004-returned.png) — Batch returned for insufficient evidence
+> - [`docs/screenshots/demo-005-verified.png`](docs/screenshots/demo-005-verified.png) — Verified batch with gated (unavailable) environmental impact
 
 ---
 

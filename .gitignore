@@ -37,3 +37,16 @@ Thumbs.db
 .next/
 next-env.d.ts
 out/
+
+# Local developer tooling and agent scaffolding
+.agent/
+.agents/
+.claude/
+.codex/
+.gemini/
+.impeccable/
+design-references/
+web/AGENTS.md
+
+# Local root screenshot captures (docs/screenshots/ is tracked)
+/*.png
