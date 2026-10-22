@@ -686,7 +686,7 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
       client,
       {
         batchId: CREATED_BATCH_ID,
-        evidence: { bytes: samplePdfBytes, mimeType: "image/png" },
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
         batch: makeBatchContext({ state: "COLLECTED", intake_mass_grams: 10000 }),
       },
       () => FIXED_OBJECT_ID,
