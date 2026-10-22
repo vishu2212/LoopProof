@@ -42,24 +42,33 @@ These steps require direct access to your deployed Supabase project (`tvsjrxjvme
 
 ### A. Supabase Storage Configuration
 1. Open **Supabase Dashboard → Storage → Buckets**:
-   - Verify the `evidence` bucket exists and has **Public bucket** set to **OFF** (private).
-   - Verify **Maximum file size limit** is set to `20 MB` (or `20971520` bytes).
-   - Verify **Allowed MIME types** is restricted to `application/pdf`, `image/jpeg`, `image/png`.
+   - Verify the `evidence` bucket exists and has **Public bucket** set to **OFF** (private). *(Verified: Configured private).*
+   - Verify **Maximum file size limit** is set to `20 MB` (or `20971520` bytes). *(Verified: Set to 20 MB).*
+   - Verify **Allowed MIME types** is restricted to `application/pdf`, `image/jpeg`, `image/png`. *(Verified: Restricted to PDF, JPEG, PNG).*
 2. Open **Supabase Dashboard → Storage → Policies**:
-   - Confirm SELECT policy restricts object downloads to assigned batch participants (`evidence_files_select_participant`).
-   - Confirm INSERT policy restricts uploads to the authorized lifecycle actor (`evidence_files_insert_actor`).
-   - Confirm **no UPDATE or DELETE policies** exist on `storage.objects` for authenticated or anon roles (evidence must be append-only).
+   - Confirm SELECT policy restricts object downloads to assigned batch participants:
+     - **Live Dashboard Name:** `evidence_objects_read` (or repository migration name: `evidence_files_select_participant`).
+     - **Expression:** `bucket_id = 'evidence' AND (SELECT private.is_batch_participant(private.storage_batch_id(objects.name)))`
+   - Confirm INSERT policy restricts uploads to the authorized lifecycle actor:
+     - **Live Dashboard Name:** `evidence_objects_upload` (or repository migration name: `evidence_files_insert_actor`).
+     - **Expression:** `bucket_id = 'evidence' AND (SELECT private.can_upload_evidence(objects.name))`
+   - Confirm **no UPDATE or DELETE policies** exist on `storage.objects` or `storage.buckets` for authenticated or anon roles (evidence must be append-only). *(Verified: No UPDATE or DELETE policies exist).*
 
 ### B. Supabase Migrations & Database Schema
-1. The repository schema migration `supabase/migrations/20261020000000_loopproof_core_schema.sql` is marked `PROPOSED / UNAPPLIED`.
-2. Inspect your live database before applying migrations:
+1. **Migration Ground Truth (Verified via `supabase migration list`):**
+   - `20261020000000_loopproof_core_schema.sql`: **Applied on remote database.**
+   - `20261021000000_verifier_mass_discrepancy_guard.sql`: **Applied on remote database.**
+   - `20261022000000_align_storage_mime_types.sql`: **Pending remote application.** *(Note: Live dashboard settings already enforce PDF/JPEG/PNG, so applying this migration synchronizes the migration history table).*
+2. Dry-run verification before pushing:
    ```bash
    # In terminal with Supabase CLI linked:
    supabase migration list
    supabase db push --dry-run
    ```
-3. Do not run `supabase db push` against production unless you have inspected the diff and verified that existing live tables/data will not be overwritten.
-4. If the core migration has already been applied manually in production SQL Editor, verify that the forward migration `supabase/migrations/20261021000000_verifier_mass_discrepancy_guard.sql` and `supabase/migrations/20261022000000_align_storage_mime_types.sql` are applied.
+3. To record the forward migration in remote history:
+   ```bash
+   supabase db push
+   ```
 
 ### C. Vercel Environment Variables
 1. Open **Vercel Dashboard → Project Settings → Environment Variables**:
