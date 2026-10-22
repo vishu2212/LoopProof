@@ -2,6 +2,8 @@
 
 **Evidence-gated e-waste traceability for sustainable supply chains.** Built for the IEEE ClimateChain Global Hackathon 2026 — Sustainable Supply Chains track.
 
+[![CI](https://github.com/vishu2212/LoopProof/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vishu2212/LoopProof/actions/workflows/ci.yml) [![License: UNLICENSED](https://img.shields.io/badge/license-unlicensed-lightgrey.svg)](#license)
+
 > **Collected does not mean recycled. Environmental impact must not be claimed until the required evidence exists.**
 
 LoopProof models an e-waste batch through explicit custody and review stages, separates processing claims from independently verified outcomes, and keeps evidence hashes distinct from the evidence files themselves.
@@ -9,6 +11,15 @@ LoopProof models an e-waste batch through explicit custody and review stages, se
 - **Live web app:** https://loop-proof.vercel.app/
 - **Source repository:** https://github.com/vishu2212/LoopProof
 - **Track:** Sustainable Supply Chains
+
+### Explore the demo
+
+- [Open the dashboard](https://loop-proof.vercel.app/)
+- [Pending verifier review — DEMO-002](https://loop-proof.vercel.app/batches/DEMO-002)
+- [Returned for insufficient evidence — DEMO-004](https://loop-proof.vercel.app/batches/DEMO-004)
+- [Verified, impact unavailable — DEMO-005](https://loop-proof.vercel.app/batches/DEMO-005)
+
+> The dashboard and `DEMO-*` records are synthetic fixtures for demonstration. They are not evidence of real-world collection, recycling, or environmental impact. The live Supabase registry is a separate workflow and requires an authorized account.
 
 ![LoopProof Material Traceability Dashboard](docs/screenshots/dashboard.png)
 
@@ -94,8 +105,8 @@ Requires Node.js 22+ (developed on Node 24).
 ### 1. Smart Contract Verification (Root Package)
 
 ```bash
-# Install root dependencies
-npm install
+# Install root dependencies reproducibly from package-lock.json
+npm ci
 
 # Compile contracts
 npm run build      # hardhat build
@@ -115,10 +126,10 @@ cd web
 # Configure environment variables (template provided)
 cp .env.local.example .env.local
 
-# Install web dependencies
-npm install
+# Install web dependencies reproducibly from web/package-lock.json
+npm ci
 
-# Run 55-test web & database schema invariant suite
+# Run web & database schema invariant suite
 npm test
 
 # Run TypeScript type check
@@ -192,4 +203,4 @@ POLYGON_AMOY_PRIVATE_KEY=<testnet-only-private-key-never-real-funds>
 
 ## License
 
-See the repository for license information. If no license file is present, all rights are reserved by default; ask the maintainers before reusing the code.
+This repository currently has **no open-source license** (`UNLICENSED` in `package.json`). All rights remain reserved by the copyright holder. Do not assume permission to copy, modify, redistribute, or use this code commercially. Add a `LICENSE` file only after the project owner chooses a license.
