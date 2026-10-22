@@ -615,6 +615,26 @@ export function evidenceMatchesMimeSignature(
   return false;
 }
 
+export function validateEvidenceFileSize(
+  byteSize: number,
+): { ok: true } | { ok: false; code: "INVALID_EVIDENCE"; error: string } {
+  if (typeof byteSize !== "number" || Number.isNaN(byteSize) || byteSize <= 0) {
+    return {
+      ok: false,
+      code: "INVALID_EVIDENCE",
+      error: "Selected evidence file is empty (0 bytes). Select a valid PDF, JPEG, or PNG file.",
+    };
+  }
+  if (byteSize > MAX_EVIDENCE_BYTES) {
+    return {
+      ok: false,
+      code: "INVALID_EVIDENCE",
+      error: `Selected evidence file (${byteSize} bytes) exceeds the 20 MB maximum allowed in the private evidence bucket.`,
+    };
+  }
+  return { ok: true };
+}
+
 export function validateAndPrepareEvidence(
   batchId: string,
   evidence: EvidenceUploadInput | null | undefined,

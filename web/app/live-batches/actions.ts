@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  MAX_EVIDENCE_BYTES,
   cancelBatchWithRpc,
   isValidUuid,
   recordCollectionWithRpc,
@@ -10,6 +11,7 @@ import {
   registerBatchWithRpc,
   submitProcessingWithRpc,
   submitVerifierDecisionFormData,
+  validateEvidenceFileSize,
   validateProcessingOutputs,
   validateVerifierDecisionReason,
   type BatchContextForValidation,
@@ -49,11 +51,12 @@ async function extractEvidenceFromFormData(
   }
 
   const file = entry as File;
-  if (file.size <= 0) {
+  const sizeValidation = validateEvidenceFileSize(file.size);
+  if (!sizeValidation.ok) {
     return {
       ok: false,
-      code: "INVALID_EVIDENCE",
-      message: "Selected evidence file is empty (0 bytes). Select a valid PDF, JPEG, or PNG file.",
+      code: sizeValidation.code,
+      message: sizeValidation.error,
     };
   }
 

@@ -15,6 +15,7 @@ import {
   LIVE_REJECT_REASONS,
   LIVE_RETURN_REASONS,
   LIVE_VERIFIER_CHECKLIST,
+  MAX_EVIDENCE_BYTES,
   cancelBatchWithRpc,
   computeEvidenceSha256Hex,
   decideBatchWithRpc,
@@ -36,6 +37,7 @@ import {
   submitVerifierDecisionFormData,
   validateAndPrepareEvidence,
   validateChecklist,
+  validateEvidenceFileSize,
   validateProcessingOutputs,
   validateRegistrationInput,
   validateVerifierDecisionReason,
@@ -600,6 +602,44 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
       () => FIXED_OBJECT_ID,
     );
     assert.equal(validPngRes.ok, true);
+
+    // Pre-buffering file size validation
+    const zeroSize = validateEvidenceFileSize(0);
+    assert.equal(zeroSize.ok, false);
+    if (!zeroSize.ok) {
+      assert.equal(zeroSize.code, "INVALID_EVIDENCE");
+      assert.match(zeroSize.error, /empty \(0 bytes\)/i);
+    }
+
+    const negativeSize = validateEvidenceFileSize(-10);
+    assert.equal(negativeSize.ok, false);
+
+    const oversizedValidation = validateEvidenceFileSize(MAX_EVIDENCE_BYTES + 1);
+    assert.equal(oversizedValidation.ok, false);
+    if (!oversizedValidation.ok) {
+      assert.equal(oversizedValidation.code, "INVALID_EVIDENCE");
+      assert.match(oversizedValidation.error, /exceeds the 20 MB maximum/i);
+    }
+
+    const boundarySize = validateEvidenceFileSize(MAX_EVIDENCE_BYTES);
+    assert.equal(boundarySize.ok, true);
+
+    const validSize = validateEvidenceFileSize(1024);
+    assert.equal(validSize.ok, true);
+
+    // validateAndPrepareEvidence rejects oversized payload (>20 MB)
+    const oversizedPdfBytes = new Uint8Array(MAX_EVIDENCE_BYTES + 1);
+    oversizedPdfBytes.set([0x25, 0x50, 0x44, 0x46]); // %PDF header
+    const oversizedRes = validateAndPrepareEvidence(
+      CREATED_BATCH_ID,
+      { bytes: oversizedPdfBytes, mimeType: "application/pdf" },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(oversizedRes.ok, false);
+    if (!oversizedRes.ok) {
+      assert.equal(oversizedRes.code, "INVALID_EVIDENCE");
+      assert.match(oversizedRes.error, /exceeds the 20 MB maximum/i);
+    }
   });
 
   it("Collector: uploads evidence and calls public.lp_record_collection with intake mass and SHA-256", async () => {
