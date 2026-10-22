@@ -579,6 +579,42 @@ export function computeEvidenceSha256Hex(bytes: Uint8Array): string {
   return `\\x${hex}`;
 }
 
+/**
+ * Lightweight file-signature check to catch obvious MIME spoofing before upload.
+ * This is not a malware scan or a full parser; the Storage bucket must also enforce
+ * size/type limits and the verifier must inspect evidence contents.
+ */
+export function evidenceMatchesMimeSignature(
+  bytes: Uint8Array,
+  mimeType: string,
+): boolean {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) return false;
+
+  const normalizedMime = (mimeType ?? "").trim().toLowerCase();
+  if (normalizedMime === "application/pdf") {
+    // PDF headers are expected near the beginning; allow a small leading prefix.
+    const prefix = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.byteLength, 1024)));
+    return prefix.includes("%PDF-");
+  }
+  if (normalizedMime === "image/jpeg") {
+    return bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (normalizedMime === "image/png") {
+    return (
+      bytes.byteLength >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    );
+  }
+  return false;
+}
+
 export function validateAndPrepareEvidence(
   batchId: string,
   evidence: EvidenceUploadInput | null | undefined,
@@ -618,6 +654,14 @@ export function validateAndPrepareEvidence(
       code: "INVALID_EVIDENCE",
       error:
         "Evidence file MIME type must be application/pdf, image/jpeg, or image/png (as enforced by public.evidence_mime_type_check).",
+    };
+  }
+
+  if (!evidenceMatchesMimeSignature(evidence.bytes, mimeType)) {
+    return {
+      ok: false,
+      code: "INVALID_EVIDENCE",
+      error: "Evidence file content does not match its declared PDF, JPEG, or PNG MIME type.",
     };
   }
 
