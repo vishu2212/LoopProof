@@ -67,6 +67,46 @@ The web application provides an interactive, evidence-gated ledger illustrating 
 
 LoopProof implements a **dual-track architecture**:
 
+```mermaid
+flowchart TD
+    subgraph WebTrack["Track 1: Interactive Web Application (Next.js 16 + Supabase)"]
+        direction TB
+        Client["Browser Client / UI<br>(Next.js 16 • Turbopack • React 19)"]
+
+        subgraph Routes["Application Routes"]
+            DemoUI["Synthetic Demo Mode<br><code>/</code> & <code>/batches/DEMO-NNN</code><br>7 Canonical Fixtures • Explicit Disclosures"]
+            LiveUI["Live Registry Mode<br><code>/live-batches</code> & <code>/login</code><br>Participant RLS Scoped • Role-Gated Actions"]
+        end
+
+        Client --> DemoUI
+        Client --> LiveUI
+
+        subgraph BackendServices["Backend Services & Storage"]
+            ServerActions["Next.js Server Actions<br>Pre-buffer Size Check (20MB) • Magic-Byte MIME Validation • Server SHA-256"]
+            SupabaseDB[("Supabase PostgreSQL DB<br>Append-Only Events • Trigger-Guarded State Machine<br>SECURITY DEFINER RPCs • Row Level Security")]
+            SupabaseStorage[("Private Supabase Storage<br>Bucket: 'evidence' (Private, 20MB Bound)<br>Allowed MIME: PDF, JPEG, PNG")]
+        end
+
+        LiveUI --> ServerActions
+        ServerActions --> SupabaseDB
+        ServerActions --> SupabaseStorage
+
+        note1["Notice: Live registry is not claimed to be anchored to a public blockchain"]
+        SupabaseDB -.-> note1
+    end
+
+    subgraph EVMTrack["Track 2: Solidity Protocol Reference Engine (Local Hardhat EVM)"]
+        direction TB
+        SolRegistry["LoopProofRegistry.sol<br>5-Stage Lifecycle FSM • Mass Balance Check<br>Verifier Independence Guard • Typed Reason Enums"]
+        HardhatEVM["Local Hardhat Simulated Network<br>EVM chainId 31337 • 162 Passing Automated Tests"]
+
+        SolRegistry --> HardhatEVM
+
+        note2["Notice: Reference engine verified on local Hardhat EVM;<br>not deployed to a public testnet or mainnet"]
+        HardhatEVM -.-> note2
+    end
+```
+
 1. **Interactive Web Application (`web/`):**
    - **Offline Demo Mode (`/`, `/batches/[batchId]`):** Interactive walkthrough across 7 canonical demo batches (`DEMO-001` through `DEMO-007`) illustrating every lifecycle transition, verifier checklists, alternative outcomes (`RETURNED`, `REJECTED`, `CANCELLED`), and strict impact gating.
    - **Live Cloud Registry (`/login`, `/live-batches`, `/live-batches/[batchId]`):** Interactive live registry powered by Supabase Auth and PostgreSQL with Row Level Security (`auth.uid()`), trigger-guarded state transitions, append-only audit logs, and `SECURITY DEFINER` RPCs (`lp_register_batch`, `lp_record_collection`, `lp_record_receipt`, `lp_submit_processing`, `lp_verify_batch`, `lp_return_batch`, `lp_reject_batch`, `lp_cancel_batch`).
@@ -172,16 +212,16 @@ POLYGON_AMOY_PRIVATE_KEY=<testnet-only-private-key-never-real-funds>
 2. **Gated Impact Claims:** Numerical environmental impact metrics remain completely unavailable and are never credited until independent verification is confirmed.
 3. **Verifier Independence:** The assigned verifier must be distinct from both the collector and the processor. Self-verification reverts immediately.
 4. **Conservation of Mass:** Claimed output materials must not exceed recorded intake mass ($TotalOutputs \le IntakeMass$).
-5. **Typed Audit Reasons:** Verifier returns and rejections require explicit on-chain enum reason codes (`INSUFFICIENT_EVIDENCE`, `MASS_DISCREPANCY`, `EVIDENCE_INCONSISTENT`, etc.). Free-text reasons are rejected.
-6. **Zero PII On-Chain:** Off-chain evidence files stay in private storage. Only SHA-256 hashes and minimal lifecycle metadata are recorded.
+5. **Typed Audit Reasons:** Verifier returns and rejections require explicit enum reason codes (`INSUFFICIENT_EVIDENCE`, `MASS_DISCREPANCY`, `EVIDENCE_INCONSISTENT`, etc.) enforced by the reference smart contract and database check constraints. Free-text reasons are rejected.
+6. **Zero PII in Public Registries:** Off-chain evidence files stay in private storage. Only SHA-256 hashes and minimal lifecycle metadata are recorded.
 
 ---
 
-## Blockchain Deployment Status
+## Smart Contract & Blockchain Deployment Status
 
-- **Status:** Verified locally on Hardhat simulated network (EVM `chainId 31337`).
+- **Status:** Verified locally on Hardhat simulated network (EVM `chainId 31337`, 162 passing unit tests).
 - **Public Testnet:** Currently not deployed to a public testnet. Hardhat configuration supports Base Sepolia (primary) and Polygon Amoy (fallback) via lazy `configVariable()` bindings.
-- **Scope of On-Chain Claims:** On-chain records demonstrate that authorized cryptographic keys recorded custody handoffs and that anchored evidence hashes have not been altered since submission. They do not prove that physical recycling occurred without valid off-chain evidence audits.
+- **Scope of Protocol Claims:** Contract and ledger records demonstrate that authorized cryptographic keys recorded custody handoffs and that recorded evidence hashes have not been altered since submission. They do not prove that physical recycling occurred without valid off-chain evidence audits.
 
 ---
 

@@ -26,7 +26,9 @@ Unlike legacy circularity portals that award carbon credits or green badges upon
 
 - **Multi-Stakeholder Supply Chain**: Heterogeneous actors across waste collection hubs, sorting facilities, specialized metallurgical recyclers, and independent auditing firms.
 - **High-Stakes Compliance**: Used during corporate ESG audits, ISO 14001 certification, and WEEE directive compliance reviews where false claims carry legal and reputational penalties.
-- **Cryptographic Evidence Ledger**: Off-chain evidence payloads (PDFs, weighbridge tickets, assay reports) are SHA-256 hashed and anchored on-chain/in-database.
+- **Dual-Track Implementation**:
+  - **Live Web Registry**: Built with Next.js and Supabase. Evidence files (PDFs, weighbridge tickets, assay reports) are stored in private Supabase Storage, with 32-byte SHA-256 digests recorded in PostgreSQL for file integrity. The live Supabase registry is not claimed to be anchored to a public blockchain.
+  - **Solidity Smart Contract Reference Engine**: `contracts/LoopProofRegistry.sol` implements the protocol finite state machine with role-based access, mass-balance validation, and typed reason codes, tested locally on Hardhat EVM (`chainId 31337`) across 162 automated tests.
 
 ## Capabilities and Constraints
 
@@ -34,8 +36,8 @@ Unlike legacy circularity portals that award carbon credits or green badges upon
 - **Three Exception / Alternative States**: `RETURNED` (actionable by processor with reason code), `REJECTED` (terminal failure with reason code), `CANCELLED` (pre-collection cancellation by registrar).
 - **Strict Mass-Balance Validation**: Total claimed output fractions must not exceed recorded intake mass ($Output \le Intake$).
 - **Actor Independence**: Collectors and processors cannot verify their own batches.
-- **Contract-Bound Reason Codes**: Verification returns and rejections strictly bind to predefined on-chain enums (`INSUFFICIENT_EVIDENCE`, `EVIDENCE_UNREADABLE`, `OUTPUT_DATA_INCOMPLETE`, `MASS_DISCREPANCY`, `EVIDENCE_INCONSISTENT`, `MASS_BALANCE_IMPLAUSIBLE`, `PROCESSOR_NOT_QUALIFIED`, `CHAIN_OF_CUSTODY_BROKEN`).
-- **Clear Execution Environments**: Strict separation and disclosure between offline synthetic demo fixtures and live authenticated Supabase/EVM registries.
+- **Contract-Bound Reason Codes**: Verification returns and rejections strictly bind to predefined enums (`INSUFFICIENT_EVIDENCE`, `EVIDENCE_UNREADABLE`, `OUTPUT_DATA_INCOMPLETE`, `MASS_DISCREPANCY`, `EVIDENCE_INCONSISTENT`, `MASS_BALANCE_IMPLAUSIBLE`, `PROCESSOR_NOT_QUALIFIED`, `CHAIN_OF_CUSTODY_BROKEN`) defined in the Solidity reference specification and mirrored in the Supabase schema.
+- **Clear Execution Environments**: Strict separation and disclosure between offline synthetic demo fixtures, the live Supabase-backed registry, and the locally simulated Hardhat EVM reference contracts.
 
 ## Brand Commitments
 
@@ -47,15 +49,16 @@ Unlike legacy circularity portals that award carbon credits or green badges upon
 
 - Canonical synthetic demo fixtures: `DEMO-001` through `DEMO-007` covering every lifecycle state and transition branch.
 - Validated mass balance metrics: 50.6 kg total registered intake mass, 24.5 kg in-transit/received, 10.0 kg pending claim review, 8.8 kg independently verified.
-- Smart contract implementation in `contracts/LoopProofRegistry.sol` verified by 162 unit tests.
-- Supabase SQL core schema migration with RLS policies and `SECURITY DEFINER` RPCs.
+- Smart contract reference engine in `contracts/LoopProofRegistry.sol` verified locally by 162 unit tests on Hardhat EVM (`chainId 31337`).
+- Supabase SQL core schema migration with RLS policies, trigger guards, and `SECURITY DEFINER` RPCs.
+- Live web application deployed on Vercel with route-aware context disclosures.
 
 ## Product Principles
 
 1. **Collected does not mean recycled**: Pickup certificates prove location handover, not physical recycling.
 2. **Hashes prove payload immutability, not process truth**: Cryptographic SHA-256 digests ensure files were not tampered with, but independent verifier checks are required to corroborate physical truth.
 3. **Strict impact gating**: No environmental impact numbers, avoided emissions, or carbon offsets are displayed before independent verification.
-4. **Transparent custody & accountability**: Every state change records the actor address, timestamp, evidence digest, and immutable reason codes.
+4. **Transparent custody & accountability**: Every state change records the actor identifier, timestamp, evidence digest, and immutable reason codes. The live registry stores these in PostgreSQL under Row Level Security, while the smart contract demonstrates protocol enforcement on EVM.
 
 ## Accessibility & Inclusion
 
