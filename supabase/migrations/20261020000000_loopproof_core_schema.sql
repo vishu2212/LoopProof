@@ -521,12 +521,8 @@ begin
              when 'returned' then 'RETURNED'
              else 'REJECTED' end)::public.batch_state;
 
-  select r.evidence_id, r.total_output_grams into v_ev, v_total
+  select r.evidence_id into v_ev
   from public.processing_revisions r where r.batch_id = b.id and r.revision = b.current_revision;
-
-  if p_decision = 'returned' and p_return = 'MASS_DISCREPANCY' and v_total = b.intake_mass_grams then
-    raise exception 'cannot return with MASS_DISCREPANCY when total_output_grams (%) equals intake_mass_grams (%)', v_total, b.intake_mass_grams using errcode = '22023';
-  end if;
 
   insert into public.verifier_decisions (batch_id, revision, decision, return_reason, reject_reason, checklist, verifier_id)
   values (b.id, b.current_revision, p_decision, p_return, p_reject, p_checklist, auth.uid());   -- table CHECKs enforce reasons

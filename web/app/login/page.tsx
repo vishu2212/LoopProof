@@ -28,7 +28,6 @@ export default async function LoginPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <p className="eyebrow">Supabase Auth · Server-Side Session</p>
         <h1>LoopProof Live Registry Sign In</h1>
         <p className="lede">
           Sign in with your Supabase account to view RLS-scoped batch records and, if granted the{" "}

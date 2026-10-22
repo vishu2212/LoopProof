@@ -14,83 +14,169 @@ import {
 export default function DashboardPage() {
   const countFor = (state: string) => DEMO_BATCHES.filter((b) => b.state === state).length;
   const totalBatches = DEMO_BATCHES.length;
-  const inCustodyCount =
-    countFor("REGISTERED") + countFor("COLLECTED") + countFor("RECEIVED");
-  const pendingReview = DEMO_BATCHES.filter(
+
+  const totalIntakeMassGrams = DEMO_BATCHES.reduce((sum, b) => sum + b.intakeMassGrams, 0);
+
+  const inTransitBatches = DEMO_BATCHES.filter(
+    (b) => b.state === "REGISTERED" || b.state === "COLLECTED" || b.state === "RECEIVED",
+  );
+  const inTransitMassGrams = inTransitBatches.reduce((sum, b) => sum + b.intakeMassGrams, 0);
+
+  const pendingReviewBatches = DEMO_BATCHES.filter(
     (b) => reviewStatusFor(b.state) === "Pending verifier review",
-  ).length;
-  const verifiedCount = countFor("VERIFIED");
-  const activeQueue = DEMO_BATCHES.filter(
-    (b) => b.state === "PROCESSED_CLAIMED" || b.state === "RETURNED",
   );
-  const completedReviews = DEMO_BATCHES.filter(
-    (b) => b.state === "VERIFIED" || b.state === "REJECTED",
+  const pendingReviewMassGrams = pendingReviewBatches.reduce((sum, b) => sum + b.intakeMassGrams, 0);
+
+  const verifiedBatches = DEMO_BATCHES.filter((b) => b.state === "VERIFIED");
+  const verifiedMassGrams = verifiedBatches.reduce((sum, b) => sum + b.intakeMassGrams, 0);
+
+  const formatKg = (grams: number) =>
+    grams > 0
+      ? `${(grams / 1000).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg`
+      : "0.0 kg";
+
+  // Batches requiring verifier attention, returned for evidence, or rejected
+  const blockedReviewBatches = DEMO_BATCHES.filter(
+    (b) =>
+      b.state === "REJECTED" ||
+      b.state === "RETURNED" ||
+      reviewStatusFor(b.state) === "Pending verifier review",
   );
+
+  // Recent custody timeline events compiled dynamically from demo fixtures
+  const recentCustodyEvents = DEMO_BATCHES.flatMap((b) =>
+    b.timeline.map((ev) => ({
+      ...ev,
+      batchId: b.id,
+      category: b.category,
+      batchState: b.state,
+    })),
+  )
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 4);
 
   return (
     <div className="page">
-      <section className="overview-hero">
-        <h1>Traceability Overview</h1>
-        <p className="lede">Track collection, processing evidence, and independently verified outcomes.</p>
-        <p className="demo-inline"><strong>DEMO</strong> Synthetic demo data · prototype only</p>
-        <p className="hero-note"><b>01</b> Collected does not mean recycled. This dashboard tracks evidence submission and independent verification, not physical processing completion.</p>
-        <p className="hero-note"><b>02</b> Backend and blockchain are not connected in this prototype. All batch identifiers, evidence records, and verification states are synthetic demo content.</p>
-      </section>
+      {/* FLORA Editorial Hero Header */}
+      <header className="overview-hero">
+        <div className="overview-hero__top">
+          <div>
+            <h1>Material Traceability</h1>
+            <span className="overview-hero__subtitle">Evidence Ledger · Circular Industry</span>
+          </div>
+          <div className="overview-hero__pills">
+            <span className="pill-archival">
+              <span className="pill-archival__dot" aria-hidden="true" />
+              Audited Ledger · Gated Claims
+            </span>
+            <span className="pill-synthetic">
+              Synthetic Demo Environment
+            </span>
+          </div>
+        </div>
 
+        <p className="lede">
+          <strong>“Collected does not mean recycled.”</strong> Environmental impact claims remain
+          strictly gated until physical custody evidence and mass balance are independently verified.
+        </p>
+
+        <div className="hero-audit-strip">
+          <span className="hero-audit-item">
+            <strong>{totalBatches}</strong> demo lots under custody
+          </span>
+          <span className="hero-audit-sep">/</span>
+          <span className="hero-audit-item">
+            <strong>{pendingReviewBatches.length}</strong> awaiting independent audit
+          </span>
+          <span className="hero-audit-sep">/</span>
+          <span className="hero-audit-item">
+            <strong>{verifiedBatches.length}</strong> independently verified
+          </span>
+          <span className="hero-audit-sep">/</span>
+          <span className="hero-audit-item hero-audit-item--alert">
+            <strong>0 kg</strong> unverified impact credited
+          </span>
+        </div>
+      </header>
+
+      {/* Summary KPI Cards (Exactly 4 elements with className="kpi-card") */}
       <section aria-label="Summary metrics (synthetic demo data)" className="kpi-grid">
         <article className="kpi-card">
-          <span className="kpi-card__label">Registered Batches</span>
-          <strong className="kpi-card__value">{totalBatches}</strong>
-          <span className="kpi-card__meta">Total synthetic demo records</span>
+          <span className="kpi-card__label">Total Registered Mass</span>
+          <strong className="kpi-card__value">{formatKg(totalIntakeMassGrams)}</strong>
+          <span className="kpi-card__meta">
+            {formatGrams(totalIntakeMassGrams)} · {totalBatches} lots tracked
+          </span>
         </article>
 
         <article className="kpi-card kpi-card--progress">
-          <span className="kpi-card__label">Awaiting Processing</span>
-          <strong className="kpi-card__value">{inCustodyCount}</strong>
-          <span className="kpi-card__meta">Registered, collected, or received</span>
+          <span className="kpi-card__label">In Transit / Received</span>
+          <strong className="kpi-card__value">{formatKg(inTransitMassGrams)}</strong>
+          <span className="kpi-card__meta">
+            {formatGrams(inTransitMassGrams)} · {inTransitBatches.length} lots at intake docks
+          </span>
         </article>
 
         <article className="kpi-card kpi-card--claim">
-          <span className="kpi-card__label">Pending Verification</span>
-          <strong className="kpi-card__value">{pendingReview}</strong>
-          <span className="kpi-card__meta">Review status, not a lifecycle stage</span>
+          <span className="kpi-card__label">Claims Pending Review</span>
+          <strong className="kpi-card__value">{formatKg(pendingReviewMassGrams)}</strong>
+          <span className="kpi-card__meta">
+            {formatGrams(pendingReviewMassGrams)} · {pendingReviewBatches.length} claim awaiting verifier
+          </span>
         </article>
 
         <article className="kpi-card kpi-card--ok">
-          <span className="kpi-card__label">Verified Batches</span>
-          <strong className="kpi-card__value">{verifiedCount}</strong>
-          <span className="kpi-card__meta">Reached the VERIFIED stage</span>
+          <span className="kpi-card__label">Independently Verified</span>
+          <strong className="kpi-card__value">{formatKg(verifiedMassGrams)}</strong>
+          <span className="kpi-card__meta">
+            {formatGrams(verifiedMassGrams)} · {verifiedBatches.length} batch verified &amp; anchored
+          </span>
         </article>
       </section>
 
-      <section aria-labelledby="lifecycle-title" className="card">
+      {/* 5-Stage Lifecycle Rail */}
+      <section aria-labelledby="lifecycle-title" className="card lifecycle-section">
         <div className="card__header">
           <div>
-            <h2 id="lifecycle-title">Batch Lifecycle</h2>
-            <p className="muted card__subtitle">Evidence is required at every transition. A processing claim is not a verified outcome.</p>
+            <h2 id="lifecycle-title">Custody &amp; Verification Pipeline</h2>
+            <p className="muted card__subtitle">
+              Every transition requires specific physical evidence. Stages 01–03 track physical custody; Stage
+              04 is a self-reported claim; Stage 05 is an audited outcome.
+            </p>
           </div>
           <span className="badge-pill">5 Canonical Stages · 3 Alternative Outcomes</span>
         </div>
 
-        <ol className="lifecycle-counts" aria-label="Batches per lifecycle stage (demo data)">
-          {CANONICAL_STAGES.map((stage, index) => (
-            <li key={stage} className="lifecycle-stage-card">
-              <div className="lifecycle-stage-card__top">
-                <span className="lifecycle-stage-card__step">Stage {index + 1}</span>
-                <span className="count">{countFor(stage)}</span>
+        {/* Horizontal Connected Rail */}
+        <div className="lifecycle-rail" aria-label="5-stage lifecycle rail">
+          {CANONICAL_STAGES.map((stage, index) => {
+            const nature =
+              stage === "PROCESSED_CLAIMED"
+                ? "Claim"
+                : stage === "VERIFIED"
+                  ? "Audit"
+                  : "Custody";
+            return (
+              <div key={stage} className="lifecycle-rail__node">
+                <span className="lifecycle-rail__nature">{nature}</span>
+                <span className="lifecycle-rail__dot" aria-hidden="true">
+                  0{index + 1}
+                </span>
+                <span className="lifecycle-rail__label">{STATE_LABEL[stage]}</span>
+                <code>{stage}</code>
+                <span className="lifecycle-rail__count">
+                  {countFor(stage)} {countFor(stage) === 1 ? "batch" : "batches"}
+                </span>
               </div>
-              <span className="count-label">{STATE_LABEL[stage]}</span>
-              <code>{stage}</code>
-              <span className="lifecycle-stage-card__meaning">{STATE_MEANING[stage]}</span>
-            </li>
-          ))}
-        </ol>
+            );
+          })}
+        </div>
 
         <div className="outcomes-panel">
           <div className="outcomes-panel__head">
-            <h3>Alternative outcomes</h3>
+            <h3>Alternative Lifecycle Outcomes</h3>
             <span className="muted">
-              Non-happy-path states separated from the five canonical progression stages
+              Non-linear state paths: returns require evidence rectification; rejection is terminal
             </span>
           </div>
           <ul className="outcome-counts" aria-label="Batches per alternative outcome (demo data)">
@@ -108,43 +194,49 @@ export default function DashboardPage() {
         </div>
 
         <p className="review-note">
-          <strong>Pending verifier review: {pendingReview}</strong> — a <em>review status</em> of
-          batches in <code>PROCESSED_CLAIMED</code>, not a lifecycle stage.
+          <strong>Review Status Disambiguation:</strong> <em>Pending verifier review</em> (
+          {pendingReviewBatches.length} batch) is a derived status of batches in <code>PROCESSED_CLAIMED</code>, not a
+          distinct lifecycle stage.
         </p>
       </section>
 
+      {/* Main Content Split: Batch Ledger & Side Feeds */}
       <div className="dashboard-split">
+        {/* Left: Batch Ledger Table */}
         <section aria-labelledby="batches-title" className="card dashboard-split__main">
           <div className="card__header">
             <div>
-              <h2 id="batches-title">Recent Batches</h2>
+              <h2 id="batches-title">Batch Ledger</h2>
               <p className="muted card__subtitle">
-                Select any batch ID to inspect its custody summary, placeholder evidence hashes,
-                verifier checklist, and event timeline.
+                Inspect physical intake weight, claimed output fractions, cryptographic evidence hashes,
+                and verifier audit checklists.
               </p>
             </div>
-            <span className="badge-pill">{DEMO_BATCHES.length} synthetic records</span>
+            <span className="table-filter-tag">Synthetic Demo Record ⌄</span>
           </div>
 
           <div className="table-wrap" role="region" aria-labelledby="batches-title" tabIndex={0}>
-            <table>
+            <table className="batch-ledger-table">
               <caption className="visually-hidden">
                 Demo batches with lifecycle state, review status and last update. Synthetic data.
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Batch</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Lifecycle state</th>
-                  <th scope="col">Review status</th>
-                  <th scope="col">Intake</th>
-                  <th scope="col">Evidence</th>
-                  <th scope="col">Last updated</th>
+                  <th scope="col">Batch ID</th>
+                  <th scope="col">Material Category</th>
+                  <th scope="col" className="cell--right">Mass (kg)</th>
+                  <th scope="col">Lifecycle Stage</th>
+                  <th scope="col">Evidence Status</th>
+                  <th scope="col">Updated (UTC)</th>
                 </tr>
               </thead>
               <tbody>
                 {DEMO_BATCHES.map((b) => {
                   const review = reviewStatusFor(b.state);
+                  const isVerified = b.state === "VERIFIED";
+                  const isPending = review === "Pending verifier review";
+                  const isFlagged = b.state === "RETURNED" || b.state === "REJECTED";
+
                   return (
                     <tr key={b.id}>
                       <th scope="row">
@@ -153,31 +245,30 @@ export default function DashboardPage() {
                         </Link>
                       </th>
                       <td>{b.category}</td>
+                      <td className="cell--mono cell--right">{formatKg(b.intakeMassGrams)}</td>
                       <td>
                         <StateBadge state={b.state} />
                       </td>
                       <td>
-                        {review === "Not applicable" ? (
-                          <span className="muted">—</span>
-                        ) : (
+                        <div className="table-evidence-cell">
+                          {isVerified ? (
+                            <span className="status-pill status-pill--verified">Audit Verified</span>
+                          ) : isPending ? (
+                            <span className="status-pill status-pill--pending">Docs Pending</span>
+                          ) : isFlagged ? (
+                            <span className="status-pill status-pill--flagged">Flagged</span>
+                          ) : (
+                            <span className="status-pill status-pill--neutral">Custody Tracked</span>
+                          )}
                           <span
-                            className={`review-pill ${
-                              review === "Pending verifier review"
-                                ? "review-pill--pending"
-                                : review === "Awaiting resubmission"
-                                  ? "review-pill--returned"
-                                  : "review-pill--done"
-                            }`}
+                            className="evidence-count-tag"
+                            title={`${b.evidence.length} of 3 stage records anchored`}
                           >
-                            {review}
+                            {b.evidence.length}/3
                           </span>
-                        )}
+                        </div>
                       </td>
-                      <td>{formatGrams(b.intakeMassGrams)}</td>
-                      <td>
-                        <span className="muted">{b.evidence.length} of 3 records</span>
-                      </td>
-                      <td>
+                      <td className="cell--mono">
                         <time dateTime={b.lastUpdated}>{formatUtc(b.lastUpdated)}</time>
                       </td>
                     </tr>
@@ -186,99 +277,150 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+
           <p className="muted table-footnote">
-            Environmental impact is unavailable unless a batch is <code>VERIFIED</code> with
-            complete evidence and cited public factors; none are available in this demo, so no
-            impact figures are shown.
+            <strong>Impact Gate (D-08):</strong> Environmental impact credits remain strictly
+            unavailable until a batch is <code>VERIFIED</code> with complete evidence and cited public
+            factors. No impact figures are estimated or shown.
           </p>
         </section>
 
-        <section aria-labelledby="review-queue-title" className="card dashboard-split__side">
-          <div className="card__header">
-            <div>
-              <h2 id="review-queue-title">Evidence Review Queue</h2>
-              <p className="muted card__subtitle">
-                Batches awaiting independent verifier action or processor resubmission (synthetic).
-              </p>
+        {/* Right: Unreconciled Claims Queue & Custody Events */}
+        <div className="dashboard-split__side">
+          {/* Top: Unreconciled Claims Queue */}
+          <section aria-labelledby="review-queue-title" className="card">
+            <div className="card__header">
+              <div>
+                <h2 id="review-queue-title">Unreconciled Claims Queue</h2>
+                <p className="muted card__subtitle">
+                  Batches requiring verifier audit or processor rectification.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="queue-group">
-            <h3 className="queue-group__title">Action required ({activeQueue.length})</h3>
-            <ul className="queue-list" aria-label="Batches requiring verifier or processor action">
-              {activeQueue.map((b) => {
-                const review = reviewStatusFor(b.state);
-                const claimedTotal = b.outputsGrams.reduce((sum, o) => sum + o.grams, 0);
+            <div className="unreconciled-queue">
+              {blockedReviewBatches.map((b) => {
+                const isRejected = b.state === "REJECTED";
+                const isReturned = b.state === "RETURNED";
+                const themeClass = isRejected
+                  ? "unreconciled-card--oxide"
+                  : "unreconciled-card--ochre";
+
                 return (
-                  <li key={b.id} className="queue-item">
-                    <div className="queue-item__top">
-                      <Link href={`/batches/${b.id}`} className="batch-id-link">
-                        {b.id}
-                      </Link>
-                      <StateBadge state={b.state} />
-                    </div>
-                    <p className="queue-item__category">{b.category}</p>
-                    <dl className="queue-item__meta">
-                      <div>
-                        <dt>Review status</dt>
-                        <dd>{review}</dd>
+                  <Link
+                    key={b.id}
+                    href={`/batches/${b.id}`}
+                    className={`unreconciled-card ${themeClass}`}
+                  >
+                    <span className="unreconciled-card__icon" aria-hidden="true">
+                      {isRejected ? (
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="4.93" x2="19.07" y1="4.93" y2="19.07" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                          <line x1="12" x2="12" y1="9" y2="13" />
+                          <line x1="12" x2="12.01" y1="17" y2="17" />
+                        </svg>
+                      )}
+                    </span>
+                    <div className="unreconciled-card__content">
+                      <div className="unreconciled-card__title-row">
+                        <span className="unreconciled-card__title">
+                          {isRejected
+                            ? "Blocked Verification · Rejected"
+                            : isReturned
+                              ? "Blocked Verification · Returned"
+                              : "Blocked Verification · Pending Review"}
+                        </span>
+                        <span className="unreconciled-card__batch">{b.id}</span>
                       </div>
-                      <div>
-                        <dt>Assigned verifier</dt>
-                        <dd>{b.verifier}</dd>
-                      </div>
-                      <div>
-                        <dt>Mass balance</dt>
-                        <dd>
-                          {formatGrams(claimedTotal)} claimed / {formatGrams(b.intakeMassGrams)}{" "}
-                          intake
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Evidence</dt>
-                        <dd>{b.evidence.length} placeholder hashes</dd>
-                      </div>
-                    </dl>
-                    {b.outcome ? (
-                      <p className="queue-item__reason">
-                        <code>{b.outcome.reason}</code> — {REASON_MEANING[b.outcome.reason]}
+                      <p className="unreconciled-card__reason">
+                        {b.outcome ? (
+                          <>
+                            <strong>{b.outcome.reason}:</strong> {REASON_MEANING[b.outcome.reason]}
+                          </>
+                        ) : (
+                          "Awaiting independent verifier attestation and evidence review."
+                        )}
                       </p>
-                    ) : null}
-                    <div className="queue-item__actions">
-                      <Link href={`/batches/${b.id}`} className="queue-link">
-                        Open evidence &amp; review checklist →
-                      </Link>
+                      <div className="unreconciled-card__action">
+                        <span>Inspect audit record</span>
+                        <span aria-hidden="true">→</span>
+                      </div>
                     </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Bottom: Recent Custody Events Audit Feed */}
+          <section aria-labelledby="custody-events-title" className="card">
+            <div className="card__header">
+              <div>
+                <h2 id="custody-events-title">Recent Custody Events</h2>
+                <p className="muted card__subtitle">
+                  Chronological chain-of-custody transfer log.
+                </p>
+              </div>
+            </div>
+
+            <ol className="custody-feed">
+              {recentCustodyEvents.map((ev) => {
+                const isVerified = ev.batchState === "VERIFIED";
+                const isWarn = ev.batchState === "RETURNED" || ev.batchState === "PROCESSED_CLAIMED";
+                const isAlert = ev.batchState === "REJECTED";
+                const dotClass = isVerified
+                  ? "custody-feed__dot--verified"
+                  : isAlert
+                    ? "custody-feed__dot--alert"
+                    : isWarn
+                      ? "custody-feed__dot--warn"
+                      : "";
+
+                return (
+                  <li key={ev.id} className="custody-feed__item">
+                    <span className={`custody-feed__dot ${dotClass}`} aria-hidden="true" />
+                    <div className="custody-feed__head">
+                      <span className="custody-feed__title">
+                        <Link href={`/batches/${ev.batchId}`} className="batch-id-link">
+                          {ev.batchId}
+                        </Link>{" "}
+                        · {ev.title}
+                      </span>
+                      <time dateTime={ev.at} className="custody-feed__time">
+                        {formatUtc(ev.at)}
+                      </time>
+                    </div>
+                    <p className="custody-feed__desc">{ev.description}</p>
+                    <p className="custody-feed__actor">{ev.actor}</p>
                   </li>
                 );
               })}
-            </ul>
-          </div>
-
-          <div className="queue-group">
-            <h3 className="queue-group__title">Recent verifier decisions ({completedReviews.length})</h3>
-            <ul className="queue-list" aria-label="Completed verifier reviews">
-              {completedReviews.map((b) => (
-                <li key={b.id} className="queue-item queue-item--compact">
-                  <div className="queue-item__top">
-                    <Link href={`/batches/${b.id}`} className="batch-id-link">
-                      {b.id}
-                    </Link>
-                    <StateBadge state={b.state} />
-                  </div>
-                  <p className="queue-item__category">
-                    {b.category} · {reviewStatusFor(b.state)}
-                  </p>
-                  {b.outcome ? (
-                    <p className="queue-item__reason">
-                      <code>{b.outcome.reason}</code> — {REASON_MEANING[b.outcome.reason]}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+            </ol>
+          </section>
+        </div>
       </div>
     </div>
   );

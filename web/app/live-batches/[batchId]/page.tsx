@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CopyableHash } from "@/components/CopyableHash";
 import { LifecycleStepper } from "@/components/LifecycleStepper";
 import { LiveLifecycleActions } from "@/components/LiveLifecycleActions";
 import { StateBadge } from "@/components/StateBadge";
@@ -402,7 +403,7 @@ export default async function LiveBatchDetailPage({
                         <code>{e.submitted_by}</code>
                       </td>
                       <td>
-                        <code>{formatByteaHex(e.sha256)}</code>
+                        <CopyableHash hash={formatByteaHex(e.sha256)} label={e.sha256} />
                       </td>
                       <td>
                         <code>{e.storage_path}</code>

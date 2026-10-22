@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoopProof &mdash; IEEE ClimateChain Global Hackathon 2026 Project Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   CSS RESET & CORE SYSTEM (A4 PORTRAIT SPECIFICATION)
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --forest-950: #0d2218;
+  --forest-900: #143224;
+  --forest-800: #1c4230;
+  --forest-700: #25553e;
+  --forest-600: #316c50;
+  --forest-500: #418564;
+  --forest-100: #e8f1ec;
+  --forest-50:  #f4f8f5;
+
+  --charcoal-900: #171c19;
+  --charcoal-800: #2b332e;
+  --charcoal-700: #3f4b44;
+  --charcoal-600: #55645b;
+  --charcoal-500: #708076;
+  --charcoal-300: #abb8b0;
+  --border-light: #d4ded8;
+  --border-subtle: #e6ede9;
+
+  --badge-green-bg: #e6f4ea;
+  --badge-green-txt: #137333;
+  --badge-amber-bg: #fef7e0;
+  --badge-amber-txt: #8c4b00;
+  --badge-red-bg:   #fce8e6;
+  --badge-red-txt:   #b81d1a;
+
+  --font-serif: "Newsreader", "Charter", "Georgia", "Cambria", serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+html {
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--charcoal-900);
+  background-color: #e6ece8;
+  line-height: 1.46;
+}
+
+/* SCREEN VIEW (BROWSER PREVIEW) */
+@media screen {
+  body {
+    padding: 28px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .page {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.09), 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* PRINT & A4 EXACT BOUNDS */
+.page {
+  width: 210mm;
+  height: 297mm;
+  max-height: 297mm;
+  background-color: #ffffff;
+  padding: 13mm 17mm 11mm 17mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  page-break-after: always;
+  break-after: page;
+}
+
+.page:last-of-type {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    padding: 0 !important;
+  }
+  .page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* RUNNING HEADER & FOOTER */
+.running-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 8px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--charcoal-500);
+  padding-bottom: 5px;
+  border-bottom: 0.75px solid var(--border-light);
+  margin-bottom: 9px;
+}
+
+.running-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 8px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--charcoal-500);
+  padding-top: 5px;
+  border-top: 0.75px solid var(--border-light);
+  margin-top: 8px;
+}
+
+.running-footer a {
+  color: var(--forest-700);
+  text-decoration: none;
+}
+.running-footer a:hover {
+  text-decoration: underline;
+}
+
+.page-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+/* TYPOGRAPHY */
+h1, h2, h3, h4 {
+  color: var(--forest-950);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.18;
+}
+
+p {
+  color: var(--charcoal-800);
+  margin-bottom: 5.5px;
+  font-size: 9.3px;
+  line-height: 1.45;
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+strong {
+  font-weight: 600;
+  color: var(--charcoal-900);
+}
+
+a {
+  color: var(--forest-800);
+  text-decoration: none;
+  border-bottom: 0.5px solid var(--forest-600);
+  transition: border-color 0.15s;
+}
+a:hover {
+  border-bottom-color: var(--forest-950);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 8.4px;
+  background-color: var(--forest-50);
+  color: var(--forest-950);
+  padding: 1px 3.5px;
+  border-radius: 2px;
+  border: 0.5px solid var(--border-subtle);
+}
+
+/* ==========================================================================
+   PAGE 1 (COVER & EXECUTIVE SUMMARY) SPECIFIC STYLING
+   ========================================================================== */
+#page-1 .cover-top-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--forest-50);
+  border: 0.75px solid var(--border-light);
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--forest-800);
+  margin-bottom: 14px;
+}
+
+#page-1 .cover-title-group {
+  margin-bottom: 14px;
+}
+
+#page-1 .cover-title {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--forest-950);
+  line-height: 1.05;
+  margin-bottom: 3.5px;
+}
+
+#page-1 .cover-subtitle {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--forest-700);
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+#page-1 .axiom-card {
+  background-color: var(--forest-50);
+  border-left: 3px solid var(--forest-700);
+  border-top: 0.75px solid var(--border-light);
+  border-right: 0.75px solid var(--border-light);
+  border-bottom: 0.75px solid var(--border-light);
+  padding: 12px 15px;
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 14px;
+}
+
+#page-1 .axiom-quote {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--forest-950);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+#page-1 .axiom-note {
+  font-size: 9.3px;
+  color: var(--charcoal-600);
+  line-height: 1.45;
+}
+
+#page-1 .meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  background-color: #ffffff;
+  border: 0.75px solid var(--border-light);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 15px;
+}
+
+#page-1 .meta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+#page-1 .meta-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--charcoal-500);
+  margin-bottom: 2px;
+}
+
+#page-1 .meta-value {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--charcoal-900);
+}
+
+#page-1 .meta-value a {
+  border-bottom: 0.75px dotted var(--forest-700);
+}
+
+#page-1 .cover-summary {
+  margin-bottom: 14px;
+}
+
+#page-1 .cover-summary h3 {
+  font-size: 12.5px;
+  margin-bottom: 6px;
+  color: var(--forest-900);
+  border-bottom: 0.75px solid var(--border-light);
+  padding-bottom: 4px;
+}
+
+#page-1 .cover-summary p {
+  font-size: 9.6px;
+  line-height: 1.54;
+  margin-bottom: 7.5px;
+}
+
+#page-1 .pillars-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: 14px;
+}
+
+#page-1 .pillar-card {
+  background-color: var(--forest-50);
+  border: 0.75px solid var(--border-light);
+  border-radius: 4px;
+  padding: 12px 12px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+#page-1 .pillar-number {
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  font-weight: 600;
+  color: var(--forest-600);
+  margin-bottom: 2px;
+}
+
+#page-1 .pillar-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--forest-950);
+  margin-bottom: 5px;
+  line-height: 1.25;
+}
+
+#page-1 .pillar-desc {
+  font-size: 8.6px;
+  color: var(--charcoal-700);
+  line-height: 1.42;
+  margin-bottom: 8px;
+}
+
+#page-1 .pillar-tag {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  color: var(--forest-800);
+  background-color: #ffffff;
+  border: 0.5px solid var(--border-light);
+  padding: 2px 5px;
+  border-radius: 2px;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+#page-1 .page1-banner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background-color: var(--forest-50);
+  border-left: 3px solid var(--forest-700);
+  border-top: 0.75px solid var(--border-light);
+  border-right: 0.75px solid var(--border-light);
+  border-bottom: 0.75px solid var(--border-light);
+  border-radius: 0 4px 4px 0;
+  padding: 11px 14px;
+  margin-bottom: 0;
+}
+
+#page-1 .banner-col {
+  display: flex;
+  flex-direction: column;
+}
+
+#page-1 .banner-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--forest-800);
+  margin-bottom: 3px;
+}
+
+#page-1 .banner-text {
+  font-size: 8.7px;
+  line-height: 1.42;
+  color: var(--charcoal-800);
+}
+
+/* ==========================================================================
+   SHARED INTERIOR PAGE STYLING
+   ========================================================================== */
+.section-title {
+  font-size: 12.5px;
+  color: var(--forest-950);
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--forest-800);
+  padding-bottom: 2.5px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.section-tag {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 500;
+  color: var(--forest-600);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.subsection-title {
+  font-size: 9.8px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--forest-900);
+  margin: 5px 0 2px 0;
+}
+
+/* TWO-COLUMNS LAYOUT */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* CALLOUT BOXES */
+.callout {
+  padding: 6.5px 9px;
+  border-radius: 4px;
+  font-size: 8.6px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  border: 0.75px solid var(--border-light);
+}
+
+.callout-sage {
+  background-color: var(--forest-50);
+  border-left: 3px solid var(--forest-700);
+}
+
+.callout-title {
+  font-weight: 600;
+  font-size: 9.1px;
+  color: var(--forest-950);
+  margin-bottom: 2px;
+}
+
+/* TABLES */
+.editorial-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.4px;
+  margin: 5px 0;
+}
+
+.editorial-table th {
+  text-align: left;
+  background-color: var(--forest-50);
+  color: var(--forest-950);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 7.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4.5px 6.5px;
+  border-top: 1px solid var(--forest-800);
+  border-bottom: 1px solid var(--forest-800);
+}
+
+.editorial-table td {
+  padding: 4.5px 6.5px;
+  border-bottom: 0.75px solid var(--border-subtle);
+  color: var(--charcoal-800);
+  vertical-align: top;
+  line-height: 1.32;
+}
+
+.editorial-table tr:last-child td {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.editorial-table td:first-child {
+  font-weight: 500;
+  color: var(--forest-900);
+}
+
+/* BADGES */
+.badge {
+  display: inline-block;
+  padding: 1.2px 4px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 6.8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-green { background-color: var(--badge-green-bg); color: var(--badge-green-txt); }
+.badge-amber { background-color: var(--badge-amber-bg); color: var(--badge-amber-txt); }
+.badge-red   { background-color: var(--badge-red-bg);   color: var(--badge-red-txt); }
+
+/* DIAGRAM CONTAINER */
+.diagram-container {
+  background-color: #ffffff;
+  border: 0.75px solid var(--border-light);
+  border-radius: 4px;
+  padding: 5px 6px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  color: var(--charcoal-500);
+  letter-spacing: 0.04em;
+  margin-top: 3.5px;
+  text-align: center;
+}
+
+/* METRIC ROW */
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6.5px;
+  margin-bottom: 7px;
+}
+
+.metric-card {
+  border: 0.75px solid var(--border-light);
+  background-color: var(--forest-50);
+  padding: 5.5px 7.5px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.metric-num {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--forest-900);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.metric-label {
+  font-size: 7.4px;
+  color: var(--charcoal-600);
+  line-height: 1.22;
+}
+
+/* BULLET LIST */
+ul.bullet-list {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 4px;
+}
+
+ul.bullet-list li {
+  position: relative;
+  padding-left: 10px;
+  font-size: 8.6px;
+  color: var(--charcoal-800);
+  margin-bottom: 2.5px;
+  line-height: 1.36;
+}
+
+ul.bullet-list li::before {
+  content: "\2022";
+  position: absolute;
+  left: 2px;
+  color: var(--forest-600);
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+
+<!-- ==========================================================================
+     PAGE 1: COVER & EXECUTIVE SUMMARY
+     ========================================================================== -->
+<section class="page" id="page-1">
+  <div class="page-body">
+    <div class="cover-top-badge">
+      <span>IEEE ClimateChain Global Hackathon 2026</span>
+      <span style="color: var(--border-light);">&bull;</span>
+      <span>Track: Sustainable Supply Chains</span>
+    </div>
+
+    <div class="cover-title-group">
+      <h1 class="cover-title">LoopProof</h1>
+      <div class="cover-subtitle">Evidence-Gated E-Waste Traceability</div>
+    </div>
+
+    <div class="axiom-card">
+      <div class="axiom-quote">&ldquo;Collected does not mean recycled. Environmental impact must not be claimed until the required evidence exists.&rdquo;</div>
+      <div class="axiom-note">An evidence-gated traceability framework enforcing role separation, SHA-256 evidence-file integrity checking, and mass-balance conservation before any sustainability claim is recognized.</div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Live Interactive Prototype</span>
+        <span class="meta-value"><a href="https://loop-proof.vercel.app/" target="_blank" rel="noopener noreferrer">loop-proof.vercel.app</a></span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Public Repository</span>
+        <span class="meta-value"><a href="https://github.com/vishu2212/LoopProof" target="_blank" rel="noopener noreferrer">github.com/vishu2212/LoopProof</a></span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Competition Track</span>
+        <span class="meta-value">Sustainable Supply Chains (Primary Track)</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Hackathon Window</span>
+        <span class="meta-value">October 5, 2026 &ndash; October 25, 2026</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Implementation Status</span>
+        <span class="meta-value">Prototype with 162 Solidity tests &bull; 55 web tests passing</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Technology Stack</span>
+        <span class="meta-value">Next.js 16, TypeScript, Supabase Auth, PostgreSQL RLS, Solidity 0.8.28 (Hardhat)</span>
+      </div>
+    </div>
+
+    <div class="cover-summary">
+      <h3>Project Motivation &amp; Architecture Overview</h3>
+      <p>Global electronic waste generation exceeds 62 million metric tons annually, yet documented formal recycling rates hover below 23%. In extended producer responsibility (EPR) reporting and corporate sustainability disclosures, an institutional failure mode routinely recurs: <strong>collection is conflated with verified processing</strong>. Drop-off receipts and aggregation logs are booked as proof of material recovery, enabling premature carbon offsets and ESG claims while equipment is in transit, stockpiled, downcycled, or lost to informal overseas processing.</p>
+      <p><strong>LoopProof</strong> addresses this verification gap by treating e-waste tracking as a strict, evidence-gated finite state machine. Rather than accepting vendor self-certifications or claiming that blockchain magically guarantees physical recycling, LoopProof enforces cryptographic accountability: each lifecycle transition requires assigned role authorization, non-reusable SHA-256 evidence-file integrity checking, and physical mass-balance validation (total reported output mass &le; recorded intake mass).</p>
+      <p>Crucially, numerical environmental impact metrics remain completely unavailable until an independent verifier accepts the claim. The live application demonstrates this workflow using Supabase Auth and PostgreSQL Row Level Security, alongside a reference smart contract suite tested locally on Hardhat.</p>
+    </div>
+
+    <div class="subsection-title" style="margin-top: 4px; margin-bottom: 2px;">Core Architectural Pillars</div>
+    <div class="pillars-grid">
+      <div class="pillar-card">
+        <div>
+          <div class="pillar-number">01 / INTEGRITY</div>
+          <div class="pillar-title">Evidence-File Integrity Checking</div>
+          <div class="pillar-desc">No lifecycle stage advances on assertion alone. Every state transition requires anchoring an unalterable SHA-256 digest of primary source documentation (intake manifests, facility weigh-in tickets, or refining reports). A digest confirms file non-alteration post-submission, while physical auditing is delegated to an accredited third party.</div>
+        </div>
+        <div class="pillar-tag">Rule D-04 &bull; Global Hash Uniqueness</div>
+      </div>
+      <div class="pillar-card">
+        <div>
+          <div class="pillar-number">02 / GOVERNANCE</div>
+          <div class="pillar-title">Separation of Duties &amp; Role Locks</div>
+          <div class="pillar-desc">Rigid separation between Registrar, Collector, Processor, and Verifier. Assignees are immutably bound at batch registration. The independent verifier must be different from the assigned collector and processor; self-verification is programmatically rejected at the database and contract layer.</div>
+        </div>
+        <div class="pillar-tag">Rule D-15 &bull; Enforced Independence</div>
+      </div>
+      <div class="pillar-card">
+        <div>
+          <div class="pillar-number">03 / CONSERVATION</div>
+          <div class="pillar-title">Mass-Balance &amp; Impact Gating</div>
+          <div class="pillar-desc">Physical mass conservation is enforced at integer gram precision: total reported output mass &le; recorded intake mass across all output material fractions. Numerical environmental impact estimates are cryptographically locked and unavailable until verification is complete.</div>
+        </div>
+        <div class="pillar-tag">Rule D-05 &bull; Conservation Law</div>
+      </div>
+    </div>
+
+    <div class="page1-banner">
+      <div class="banner-col">
+        <span class="banner-label">Rigorous Verification Summary</span>
+        <span class="banner-text">162 passing Solidity Mocha tests on local Hardhat EVM &bull; 55 passing web &amp; schema guard tests &bull; 0 typecheck or build errors &bull; Zero PII on-chain policy.</span>
+      </div>
+      <div class="banner-col">
+        <span class="banner-label">Prototype Access &amp; Codebase</span>
+        <span class="banner-text">Interactive App: <a href="https://loop-proof.vercel.app/" target="_blank" rel="noopener noreferrer">loop-proof.vercel.app</a><br>Public Code: <a href="https://github.com/vishu2212/LoopProof" target="_blank" rel="noopener noreferrer">github.com/vishu2212/LoopProof</a></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="running-footer">
+    <span>LoopProof Project Brief &bull; IEEE ClimateChain 2026</span>
+    <span><a href="https://loop-proof.vercel.app/">https://loop-proof.vercel.app/</a></span>
+    <span>Page 1 of 5</span>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     PAGE 2: PROBLEM ANALYSIS & PROPOSED SOLUTION
+     ========================================================================== -->
+<section class="page" id="page-2">
+  <div class="running-header">
+    <span>LoopProof &bull; IEEE ClimateChain Global Hackathon 2026</span>
+    <span>Problem Analysis &amp; Proposed Solution</span>
+  </div>
+
+  <div class="page-body">
+    <div class="section-title">
+      <span>1. The E-Waste Verification Gap</span>
+      <span class="section-tag">Context &amp; Failure Modes</span>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="subsection-title">The Conflation of Intake with Outcome</div>
+        <p>In conventional e-waste supply chains, certificates of recycling are commonly issued upon initial drop-off at municipal centers or corporate buyback facilities. Aggregators record intake weight, issue a collection manifest, and enterprise customers immediately calculate avoided emissions in corporate ESG disclosures.</p>
+        <p>This creates a dangerous moral hazard. Between collection and genuine mechanical or chemical refining lies a complex, multi-tiered broker network. Batches are frequently stockpiled, abandoned during commodity price drops, shredded without toxic fraction capture, or exported to developing regions under the guise of "second-hand electronics." Collection demonstrates logistics; it does not demonstrate recycling.</p>
+      </div>
+      <div>
+        <div class="subsection-title">The Oracle Problem in Physical Supply Chains</div>
+        <p>Many enterprise blockchain proposals claim to solve supply chain opacity by stamping receipts onto a ledger. However, they frequently succumb to the <em>supply chain oracle problem</em>: asserting that recording data on a distributed ledger somehow guarantees physical truth in the real world.</p>
+        <p>A blockchain ledger cannot inspect a chemical leaching bath, verify furnace operating temperatures, or detect counterfeit lab assay sheets. Claiming that "blockchain proves recycling happened" is factually false and undermines engineering integrity. Software can only guarantee what was recorded, by whom, at what time, and whether the data obeyed immutable physical and role-based constraints.</p>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top: 2px;">
+      <span>2. The LoopProof Approach: Cryptographic Accountability</span>
+      <span class="section-tag">Design Principles</span>
+    </div>
+
+    <p>LoopProof departs from speculative automation. Instead of asserting that software guarantees physical reality, LoopProof models <strong>evidence-anchored accountability</strong>. We define exactly what the ledger proves&mdash;and explicitly disclose what it does not prove.</p>
+
+    <div class="callout callout-sage" style="margin-top: 4px;">
+      <div class="callout-title">The Three Foundational Invariants of LoopProof</div>
+      <p style="margin-bottom: 2px;"><strong>1. Gated Environmental Impact (D-08):</strong> No carbon offset, landfill diversion tonnage, or ESG impact number is calculated, displayed in the UI, or exported via API until a batch reaches the <code>VERIFIED</code> terminal state. Unverified batches display explicit "Impact Unavailable" notices.</p>
+      <p style="margin-bottom: 2px;"><strong>2. Enforced Independence (D-15, D-17):</strong> The verifier must be different from the assigned collector and processor. Self-verification or circular reviews trigger hard reverts.</p>
+      <p><strong>3. Mass-Balance Conservation (D-05):</strong> The physical law of mass conservation is enforced at integer gram precision: total reported output mass &le; recorded intake mass across all claimed fractions.</p>
+    </div>
+
+    <div class="two-col" style="margin-top: 3px;">
+      <div>
+        <div class="subsection-title">Human-in-the-Loop AI Classification (D-06, D-07)</div>
+        <p>Computer vision or LLM-based device classification models are treated strictly as <em>advisory suggestions</em>. A human registrar must review and confirm the device category code. No AI-controlled key holds any lifecycle role, and AI cannot approve batches or verify recycling claims.</p>
+      </div>
+      <div>
+        <div class="subsection-title">Zero Tokenomics &amp; Anti-Greenwashing (D-09)</div>
+        <p>LoopProof deliberately excludes speculative tokens, NFTs, carbon credit minting, and DAOs. By eliminating secondary financialization, the system removes perverse incentives to generate fictitious recycling records for token rewards.</p>
+      </div>
+    </div>
+
+    <div class="subsection-title" style="margin-top: 3px;">The Truth vs. Trust Spectrum in Digital Product Passports</div>
+    <p>A cryptographic hash functions as an unforgeable digital notary stamp: it proves that an uploaded bill of lading, weighbridge ticket, or laboratory assay has not been modified by a single bit since anchoring. It does not certify that the physical scale was calibrated or that the operator was truthful. LoopProof addresses this reality by pairing immutable SHA-256 evidence-file integrity checking with institutional separation of duties, role-based liability, and mathematical mass-balance limits.</p>
+
+    <div class="subsection-title" style="margin-top: 3px;">Physical Material Stream Complexities &amp; Basel Convention Compliance</div>
+    <div class="two-col" style="margin-bottom: 2px;">
+      <div style="background-color: var(--forest-50); border: 0.75px solid var(--border-light); padding: 5px 7px; border-radius: 3px;">
+        <strong style="color: var(--forest-950); font-size: 8px;">Printed Circuit Boards (PCBs):</strong>
+        <p style="font-size: 7.8px; margin-bottom: 0; line-height: 1.32;">High precious metal concentration (gold, copper, palladium) combined with hazardous brominated flame retardants (BFRs) and lead soldering. Without output mass-balance gating, valuable metals are stripped while toxic residues are dumped or informally burned.</p>
+      </div>
+      <div style="background-color: var(--forest-50); border: 0.75px solid var(--border-light); padding: 5px 7px; border-radius: 3px;">
+        <strong style="color: var(--forest-950); font-size: 8px;">IT &amp; Telecom Hardware (Servers, Laptops):</strong>
+        <p style="font-size: 7.8px; margin-bottom: 0; line-height: 1.32;">Prone to illicit transboundary shipment under fraudulent "second-hand reuse donation" manifests, bypassing Basel Convention hazardous waste transport restrictions. LoopProof binds assigned facilities directly to certified custody logs.</p>
+      </div>
+    </div>
+
+    <div class="subsection-title" style="margin-top: 3px;">System Comparison: Conventional Practice vs. LoopProof Architecture</div>
+    <table class="editorial-table">
+      <thead>
+        <tr>
+          <th style="width: 20%;">Dimension</th>
+          <th style="width: 38%;">Conventional E-Waste Tracking</th>
+          <th style="width: 42%;">LoopProof Architecture</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Claim Timing</td>
+          <td>Impact booked at intake / drop-off aggregation.</td>
+          <td>Impact strictly gated until post-processing independent verification.</td>
+        </tr>
+        <tr>
+          <td>Evidence Integrity</td>
+          <td>Static unhashed PDF uploads, editable invoices, or self-assertions.</td>
+          <td>Cryptographic SHA-256 digests anchored permanently. Duplicate hashes rejected.</td>
+        </tr>
+        <tr>
+          <td>Role Governance</td>
+          <td>Aggregator or processor self-issues compliance certificate.</td>
+          <td>Rigid role separation: Registrar, Collector, Processor, and Verifier.</td>
+        </tr>
+        <tr>
+          <td>Mass Balance</td>
+          <td>Not enforced or calculated as coarse regional estimates.</td>
+          <td>Programmatic invariant: total reported output mass &le; recorded intake mass.</td>
+        </tr>
+        <tr>
+          <td>Ledger Claim</td>
+          <td>Misleading claim that "blockchain proves recycling."</td>
+          <td>Truthful claim: proves who attested what, when, with which unaltered evidence.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="running-footer">
+    <span>LoopProof Project Brief &bull; IEEE ClimateChain 2026</span>
+    <span><a href="https://loop-proof.vercel.app/">https://loop-proof.vercel.app/</a></span>
+    <span>Page 2 of 5</span>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     PAGE 3: LIFECYCLE & STATE MACHINE
+     ========================================================================== -->
+<section class="page" id="page-3">
+  <div class="running-header">
+    <span>LoopProof &bull; IEEE ClimateChain Global Hackathon 2026</span>
+    <span>Lifecycle State Machine &amp; Evidence Gates</span>
+  </div>
+
+  <div class="page-body">
+    <div class="section-title">
+      <span>3. Evidence-Gated Lifecycle State Machine</span>
+      <span class="section-tag">Specification &amp; Rules</span>
+    </div>
+
+    <p>Every e-waste batch in LoopProof progresses through an explicit, non-bypassable finite state machine. Transitions are executed through role-gated smart contract functions and PostgreSQL <code>SECURITY DEFINER</code> procedures. Arbitrary state regression is mathematically impossible; the only backward branch is a structured audit return requiring fresh evidence.</p>
+
+    <!-- CUSTOM VECTOR SVG DIAGRAM: LIFECYCLE -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 680 150" width="100%" height="150" xmlns="http://www.w3.org/2000/svg" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#25553e"/>
+          </marker>
+          <marker id="arrow-return" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#8c4b00"/>
+          </marker>
+          <marker id="arrow-term" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#55645b"/>
+          </marker>
+        </defs>
+
+        <!-- CANONICAL PIPELINE NODES -->
+        <!-- 1. REGISTERED -->
+        <g transform="translate(15, 12)">
+          <rect width="105" height="44" rx="3" fill="#f4f8f5" stroke="#25553e" stroke-width="1.2"/>
+          <text x="52" y="18" font-size="8.2" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#143224" text-anchor="middle">REGISTERED</text>
+          <text x="52" y="30" font-size="7.2" fill="#55645b" text-anchor="middle">Registrar Key</text>
+          <text x="52" y="39" font-size="6.5" fill="#316c50" text-anchor="middle">Locks Assignees</text>
+        </g>
+
+        <!-- Arrow 1 -> 2 -->
+        <path d="M 120 34 L 148 34" fill="none" stroke="#25553e" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="134" y="27" font-size="6.2" font-family="'JetBrains Mono', monospace" fill="#25553e" text-anchor="middle">collect()</text>
+
+        <!-- 2. COLLECTED -->
+        <g transform="translate(152, 12)">
+          <rect width="105" height="44" rx="3" fill="#f4f8f5" stroke="#25553e" stroke-width="1.2"/>
+          <text x="52" y="18" font-size="8.2" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#143224" text-anchor="middle">COLLECTED</text>
+          <text x="52" y="30" font-size="7.2" fill="#55645b" text-anchor="middle">Collector Key</text>
+          <text x="52" y="39" font-size="6.5" fill="#316c50" text-anchor="middle">Intake Mass + Hash</text>
+        </g>
+
+        <!-- Arrow 2 -> 3 -->
+        <path d="M 257 34 L 285 34" fill="none" stroke="#25553e" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="271" y="27" font-size="6.2" font-family="'JetBrains Mono', monospace" fill="#25553e" text-anchor="middle">receive()</text>
+
+        <!-- 3. RECEIVED -->
+        <g transform="translate(289, 12)">
+          <rect width="105" height="44" rx="3" fill="#f4f8f5" stroke="#25553e" stroke-width="1.2"/>
+          <text x="52" y="18" font-size="8.2" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#143224" text-anchor="middle">RECEIVED</text>
+          <text x="52" y="30" font-size="7.2" fill="#55645b" text-anchor="middle">Processor Key</text>
+          <text x="52" y="39" font-size="6.5" fill="#316c50" text-anchor="middle">Receipt Hash</text>
+        </g>
+
+        <!-- Arrow 3 -> 4 -->
+        <path d="M 394 34 L 420 34" fill="none" stroke="#25553e" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="407" y="27" font-size="6.2" font-family="'JetBrains Mono', monospace" fill="#25553e" text-anchor="middle">claim()</text>
+
+        <!-- 4. PROCESSED_CLAIMED -->
+        <g transform="translate(424, 12)">
+          <rect width="128" height="44" rx="3" fill="#fef7e0" stroke="#8c4b00" stroke-width="1.2"/>
+          <text x="64" y="18" font-size="7.8" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#8c4b00" text-anchor="middle">PROCESSED_CLAIMED</text>
+          <text x="64" y="30" font-size="7.2" fill="#55645b" text-anchor="middle">Processor Outputs</text>
+          <text x="64" y="39" font-size="6.5" fill="#8c4b00" text-anchor="middle">Mass Balance Enforced</text>
+        </g>
+
+        <!-- Arrow 4 -> 5 -->
+        <path d="M 552 34 L 576 34" fill="none" stroke="#25553e" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="564" y="27" font-size="6.2" font-family="'JetBrains Mono', monospace" fill="#25553e" text-anchor="middle">verify()</text>
+
+        <!-- 5. VERIFIED (TERMINAL) -->
+        <g transform="translate(580, 12)">
+          <rect width="85" height="44" rx="3" fill="#e6f4ea" stroke="#137333" stroke-width="1.5"/>
+          <text x="42" y="18" font-size="8.2" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#137333" text-anchor="middle">VERIFIED</text>
+          <text x="42" y="30" font-size="7.2" fill="#137333" text-anchor="middle">Terminal State</text>
+          <text x="42" y="39" font-size="6.5" fill="#137333" text-anchor="middle">Impact Unlocked</text>
+        </g>
+
+        <!-- BRANCH 1: CANCELLED (FROM REGISTERED) -->
+        <path d="M 67 56 L 67 86" fill="none" stroke="#55645b" stroke-width="1" stroke-dasharray="2,2" marker-end="url(#arrow-term)"/>
+        <text x="71" y="74" font-size="6" font-family="'JetBrains Mono', monospace" fill="#55645b">cancelBatch()</text>
+        <g transform="translate(20, 89)">
+          <rect width="95" height="34" rx="3" fill="#f4f8f5" stroke="#abb8b0" stroke-width="0.8"/>
+          <text x="47" y="16" font-size="7.3" font-family="'JetBrains Mono', monospace" font-weight="600" fill="#55645b" text-anchor="middle">CANCELLED</text>
+          <text x="47" y="26" font-size="6.3" fill="#708076" text-anchor="middle">Pre-collection only</text>
+        </g>
+
+        <!-- BRANCH 2: RETURNED & FEEDBACK LOOP -->
+        <path d="M 455 56 L 455 86" fill="none" stroke="#8c4b00" stroke-width="1" marker-end="url(#arrow-return)"/>
+        <text x="459" y="74" font-size="6" font-family="'JetBrains Mono', monospace" fill="#8c4b00">returnBatch()</text>
+        <g transform="translate(400, 89)">
+          <rect width="110" height="35" rx="3" fill="#fef7e0" stroke="#8c4b00" stroke-width="1"/>
+          <text x="55" y="15" font-size="7.3" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#8c4b00" text-anchor="middle">RETURNED</text>
+          <text x="55" y="24" font-size="6.3" fill="#55645b" text-anchor="middle">Requires Reason Code</text>
+          <text x="55" y="32" font-size="6" fill="#8c4b00" text-anchor="middle">Preserves Revision Log</text>
+        </g>
+        <!-- Loop back from RETURNED to PROCESSED_CLAIMED -->
+        <path d="M 410 89 C 385 75, 410 46, 424 41" fill="none" stroke="#8c4b00" stroke-width="1" stroke-dasharray="2,2" marker-end="url(#arrow-return)"/>
+        <text x="345" y="64" font-size="5.8" font-family="'JetBrains Mono', monospace" fill="#8c4b00">resubmitProcessing(NEW hash)</text>
+
+        <!-- BRANCH 3: REJECTED (FROM PROCESSED_CLAIMED) -->
+        <path d="M 520 56 L 520 86" fill="none" stroke="#b81d1a" stroke-width="1" marker-end="url(#arrow-term)"/>
+        <text x="524" y="74" font-size="6" font-family="'JetBrains Mono', monospace" fill="#b81d1a">rejectBatch()</text>
+        <g transform="translate(530, 89)">
+          <rect width="105" height="34" rx="3" fill="#fce8e6" stroke="#b81d1a" stroke-width="1"/>
+          <text x="52" y="16" font-size="7.3" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#b81d1a" text-anchor="middle">REJECTED</text>
+          <text x="52" y="26" font-size="6.3" fill="#55645b" text-anchor="middle">Fraud / Chain Broken</text>
+        </g>
+      </svg>
+      <div class="diagram-caption">Figure 1: LoopProof State Machine Architecture with Role Assignments, Transition Gates, and Audit Feedback Loop.</div>
+    </div>
+
+    <div class="subsection-title">Exhaustive State Machine Transition Specification</div>
+    <table class="editorial-table">
+      <thead>
+        <tr>
+          <th style="width: 15%;">From State</th>
+          <th style="width: 20%;">Function (Action)</th>
+          <th style="width: 17%;">To State</th>
+          <th style="width: 20%;">Authorized Actor</th>
+          <th style="width: 28%;">Required Payload &amp; Invariants</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>NONE</code></td>
+          <td><code>registerBatch</code></td>
+          <td><code>REGISTERED</code></td>
+          <td><code>REGISTRAR_ROLE</code></td>
+          <td>Unique claim key, category, collector, processor, verifier (distinct).</td>
+        </tr>
+        <tr>
+          <td><code>REGISTERED</code></td>
+          <td><code>recordCollection</code></td>
+          <td><code>COLLECTED</code></td>
+          <td>Assigned Collector</td>
+          <td>Intake mass &gt; 0 (integer grams), new SHA-256 evidence hash.</td>
+        </tr>
+        <tr>
+          <td><code>REGISTERED</code></td>
+          <td><code>cancelBatch</code></td>
+          <td><code>CANCELLED</code></td>
+          <td>Assigned Registrar</td>
+          <td>Pre-collection window only. Terminal state.</td>
+        </tr>
+        <tr>
+          <td><code>COLLECTED</code></td>
+          <td><code>recordReceipt</code></td>
+          <td><code>RECEIVED</code></td>
+          <td>Assigned Processor</td>
+          <td>Facility intake confirmation, new SHA-256 evidence hash.</td>
+        </tr>
+        <tr>
+          <td><code>RECEIVED</code></td>
+          <td><code>submitProcessing</code></td>
+          <td><code>PROCESSED_CLAIMED</code></td>
+          <td>Assigned Processor</td>
+          <td>1&ndash;16 material fractions, total output mass &le; intake mass, new SHA-256 hash.</td>
+        </tr>
+        <tr>
+          <td><code>PROCESSED_CLAIMED</code></td>
+          <td><code>verifyBatch</code></td>
+          <td><code>VERIFIED</code></td>
+          <td>Assigned Verifier</td>
+          <td>Checklist confirmation. Unlocks impact numbers. Terminal.</td>
+        </tr>
+        <tr>
+          <td><code>PROCESSED_CLAIMED</code></td>
+          <td><code>returnBatch</code></td>
+          <td><code>RETURNED</code></td>
+          <td>Assigned Verifier</td>
+          <td>Mandatory ReturnReason code (1..4). Non-terminal.</td>
+        </tr>
+        <tr>
+          <td><code>PROCESSED_CLAIMED</code></td>
+          <td><code>rejectBatch</code></td>
+          <td><code>REJECTED</code></td>
+          <td>Assigned Verifier</td>
+          <td>Mandatory RejectReason code (1..4). Terminal.</td>
+        </tr>
+        <tr>
+          <td><code>RETURNED</code></td>
+          <td><code>resubmitProcessing</code></td>
+          <td><code>PROCESSED_CLAIMED</code></td>
+          <td>Assigned Processor</td>
+          <td>Replaces output set, requires <em>genuinely fresh</em> SHA-256 evidence hash.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="two-col" style="margin-top: 5px;">
+      <div>
+        <div class="subsection-title">Revision History Tracking (DECISIONS D-13)</div>
+        <p>When a verifier returns a claim, the processor cannot erase the past. Resubmission replaces the active output set for review, but permanently preserves previous revisions (historical evidence hashes, timestamps, reported output masses, and return reasons) in an append-only audit trail queryable via <code>getRevision()</code>.</p>
+      </div>
+      <div>
+        <div class="subsection-title">Global Evidence Hash Uniqueness (DECISIONS D-04)</div>
+        <p>The contract maintains a global evidence mapping: reusing a previously anchored SHA-256 digest&mdash;within the same batch or across any other batch in the system&mdash;reverts immediately. Resubmitting after a return requires genuinely fresh primary documentation.</p>
+      </div>
+    </div>
+
+    <div class="subsection-title" style="margin-top: 2px;">Explicit Typed Reason Codes (DECISIONS D-14)</div>
+    <div class="two-col" style="margin-bottom: 0;">
+      <div style="background-color: #ffffff; border: 0.75px solid var(--border-light); padding: 5px 8px; border-radius: 3px;">
+        <span class="badge badge-amber" style="margin-bottom: 3px;">ReturnReason (Non-Terminal)</span>
+        <ul class="bullet-list" style="margin-top: 3px; margin-bottom: 0;">
+          <li><code>INSUFFICIENT_EVIDENCE (1)</code>: Incomplete stage records.</li>
+          <li><code>EVIDENCE_UNREADABLE (2)</code>: Corrupted file or hash mismatch.</li>
+          <li><code>OUTPUT_DATA_INCOMPLETE (3)</code>: Missing fractions/materials.</li>
+          <li><code>MASS_DISCREPANCY (4)</code>: Unexplained mass drop vs intake.</li>
+        </ul>
+      </div>
+      <div style="background-color: #ffffff; border: 0.75px solid var(--border-light); padding: 5px 8px; border-radius: 3px;">
+        <span class="badge badge-red" style="margin-bottom: 3px;">RejectReason (Terminal)</span>
+        <ul class="bullet-list" style="margin-top: 3px; margin-bottom: 0;">
+          <li><code>EVIDENCE_INCONSISTENT (1)</code>: Contradictory assay data.</li>
+          <li><code>MASS_BALANCE_IMPLAUSIBLE (2)</code>: Unrealistic recovery yields.</li>
+          <li><code>PROCESSOR_NOT_QUALIFIED (3)</code>: Facility uncertified for stream.</li>
+          <li><code>CHAIN_OF_CUSTODY_BROKEN (4)</code>: Missing transit custody handover.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="running-footer">
+    <span>LoopProof Project Brief &bull; IEEE ClimateChain 2026</span>
+    <span><a href="https://loop-proof.vercel.app/">https://loop-proof.vercel.app/</a></span>
+    <span>Page 3 of 5</span>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     PAGE 4: SYSTEM ARCHITECTURE & DATA PROTECTION
+     ========================================================================== -->
+<section class="page" id="page-4">
+  <div class="running-header">
+    <span>LoopProof &bull; IEEE ClimateChain Global Hackathon 2026</span>
+    <span>System Architecture &amp; Data Protection</span>
+  </div>
+
+  <div class="page-body">
+    <div class="section-title">
+      <span>4. Dual Implementation Architecture</span>
+      <span class="section-tag">Full-Stack Design</span>
+    </div>
+
+    <p>LoopProof implements a dual-track architecture: a <strong>live web application</strong> backed by Supabase Auth and PostgreSQL Row Level Security for interactive evaluation, alongside a <strong>Solidity smart contract reference specification</strong> verified locally in Hardhat. The live application records actions in Supabase PostgreSQL; smart contracts are currently tested locally and are not deployed to a public blockchain.</p>
+
+    <!-- CUSTOM VECTOR SVG DIAGRAM: ARCHITECTURE -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 680 145" width="100%" height="145" xmlns="http://www.w3.org/2000/svg" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- ACTORS ROW -->
+        <g transform="translate(15, 8)">
+          <rect width="650" height="25" rx="3" fill="#f4f8f5" stroke="#d4ded8" stroke-width="0.75"/>
+          <text x="15" y="16" font-size="7.5" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#25553e">ACTOR ROLES:</text>
+          <text x="110" y="16" font-size="7.5" fill="#171c19"><tspan font-weight="600">Registrar</tspan> (Registration)</text>
+          <text x="225" y="16" font-size="7.5" fill="#171c19"><tspan font-weight="600">Collector</tspan> (Intake &amp; Mass)</text>
+          <text x="345" y="16" font-size="7.5" fill="#171c19"><tspan font-weight="600">Processor</tspan> (Receipt &amp; Claims)</text>
+          <text x="470" y="7.5" font-size="7.3" fill="#171c19"><tspan font-weight="600">Independent Verifier</tspan></text>
+          <text x="470" y="19" font-size="6.8" fill="#55645b">(different from collector &amp; processor)</text>
+        </g>
+
+        <!-- APPLICATION LAYER -->
+        <g transform="translate(15, 40)">
+          <rect width="315" height="92" rx="3" fill="#ffffff" stroke="#25553e" stroke-width="1.2"/>
+          <rect width="315" height="17" rx="3 3 0 0" fill="#25553e"/>
+          <text x="10" y="12" font-size="7.5" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#ffffff">LIVE WEB LAYER (Next.js 16 + Supabase)</text>
+          <text x="10" y="30" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">Next.js App Router:</tspan> Server components &amp; role resolution</text>
+          <text x="10" y="44" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">PostgreSQL RLS:</tspan> Zero client writes (public SELECT only)</text>
+          <text x="10" y="58" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">Security Definer RPCs:</tspan> lp_register_batch, lp_verify_batch</text>
+          <text x="10" y="72" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">Private Storage:</tspan> Client SHA-256 digest + bucket isolation</text>
+          <text x="10" y="85" font-size="6.8" font-family="'JetBrains Mono', monospace" fill="#316c50">URL: https://loop-proof.vercel.app/</text>
+        </g>
+
+        <!-- SMART CONTRACT LAYER -->
+        <g transform="translate(350, 40)">
+          <rect width="315" height="92" rx="3" fill="#ffffff" stroke="#316c50" stroke-width="1.2"/>
+          <rect width="315" height="17" rx="3 3 0 0" fill="#316c50"/>
+          <text x="10" y="12" font-size="7.5" font-family="'JetBrains Mono', monospace" font-weight="700" fill="#ffffff">CONTRACT SPECIFICATION (Solidity 0.8.28)</text>
+          <text x="10" y="30" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">LoopProofRegistry.sol:</tspan> Full state machine implementation</text>
+          <text x="10" y="44" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">OpenZeppelin AccessControl:</tspan> Role-gated call boundaries</text>
+          <text x="10" y="58" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">Mass-Balance Guard:</tspan> uint128 summation into uint256</text>
+          <text x="10" y="72" font-size="7.2" fill="#171c19">&bull; <tspan font-weight="600">Event Logging:</tspan> BatchStateChanged &amp; EvidenceRecorded</text>
+          <text x="10" y="85" font-size="6.8" font-family="'JetBrains Mono', monospace" fill="#55645b">Status: 162 Passing Hardhat Tests (Local Network)</text>
+        </g>
+      </svg>
+      <div class="diagram-caption">Figure 2: LoopProof Dual Architecture &mdash; Deployed Supabase Cloud Application &amp; Solidity Smart Contract Reference Engine.</div>
+    </div>
+
+    <div class="subsection-title">Database Architecture &amp; Privilege Separation</div>
+    <table class="editorial-table">
+      <thead>
+        <tr>
+          <th style="width: 22%;">Table / Object</th>
+          <th style="width: 28%;">Access Control Policy</th>
+          <th style="width: 50%;">Data Structure &amp; Immutability Guarantee</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>public.batches</code></td>
+          <td>Authenticated SELECT only. Direct INSERT/UPDATE revoked.</td>
+          <td>Batch state, intake mass, locked assignees (collector, processor, verifier), timestamps.</td>
+        </tr>
+        <tr>
+          <td><code>public.batch_history</code></td>
+          <td>Authenticated SELECT only. Append-only via trigger.</td>
+          <td>State transition logs: <code>(from_state, to_state, actor_id, evidence_hash, timestamp)</code>.</td>
+        </tr>
+        <tr>
+          <td><code>public.evidence_records</code></td>
+          <td>Authenticated SELECT only. Mutation revoked.</td>
+          <td>SHA-256 digest, storage path, MIME type, submitter role. Unique hash index.</td>
+        </tr>
+        <tr>
+          <td><code>public.batch_outputs</code></td>
+          <td>Authenticated SELECT only. Replaced per revision.</td>
+          <td>Output fractions (material code + mass in grams). Sum bounded by intake mass.</td>
+        </tr>
+        <tr>
+          <td><code>public.batch_revisions</code></td>
+          <td>Authenticated SELECT only. Append-only.</td>
+          <td>Snapshots of processing claims, historical hashes, and verifier return reason codes.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="two-col" style="margin-top: 5px;">
+      <div>
+        <div class="subsection-title">Security Definer RPC Execution Model</div>
+        <p>Direct write operations from web clients are blocked. All state transitions execute through transactional PostgreSQL <code>SECURITY DEFINER</code> functions (<code>lp_register_batch</code>, <code>lp_record_collection</code>, <code>lp_record_receipt</code>, <code>lp_submit_processing</code>, <code>lp_verify_batch</code>, <code>lp_return_batch</code>, <code>lp_reject_batch</code>, <code>lp_cancel_batch</code>). Each procedure enforces an explicit empty search path (<code>SET search_path = ''</code>) to eliminate search path injection vulnerabilities.</p>
+      </div>
+
+      <div>
+        <div class="subsection-title">Privacy by Design &amp; Zero-PII Policy</div>
+        <p>Supply chain transparency must not compromise enterprise confidentiality or donor privacy. Batches are indexed by a 32-byte salted hash commitment (<code>bytes32</code>). Underlying device serial numbers, IMEI tags, and customer identities remain off-chain. The <code>LoopProofRegistry.sol</code> ABI accepts zero <code>string</code> or dynamic <code>bytes</code> parameters, preventing accidental PII leakage on-chain.</p>
+      </div>
+    </div>
+
+    <div class="subsection-title" style="margin-top: 3px;">Smart Contract Interface Specification (LoopProofRegistry.sol)</div>
+    <table class="editorial-table">
+      <thead>
+        <tr>
+          <th style="width: 25%;">Solidity Function</th>
+          <th style="width: 22%;">Required Caller Role</th>
+          <th style="width: 28%;">State Guard &amp; Invariants</th>
+          <th style="width: 25%;">Emitted Event</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>registerBatch()</code></td>
+          <td><code>REGISTRAR_ROLE</code></td>
+          <td>Batch does not exist; claimKey unused; assignees valid &amp; distinct.</td>
+          <td><code>BatchRegistered</code></td>
+        </tr>
+        <tr>
+          <td><code>recordCollection()</code></td>
+          <td>Assigned Collector</td>
+          <td>State is <code>REGISTERED</code>; intakeMass &gt; 0; evidenceHash unused.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+        <tr>
+          <td><code>recordReceipt()</code></td>
+          <td>Assigned Processor</td>
+          <td>State is <code>COLLECTED</code>; evidenceHash unused.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+        <tr>
+          <td><code>submitProcessing()</code></td>
+          <td>Assigned Processor</td>
+          <td>State is <code>RECEIVED</code>; total output mass &le; intake mass; 1..16 fractions; new hash.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+        <tr>
+          <td><code>verifyBatch()</code></td>
+          <td>Assigned Verifier</td>
+          <td>State is <code>PROCESSED_CLAIMED</code>; verifier distinct from collector &amp; processor.</td>
+          <td><code>BatchVerified</code></td>
+        </tr>
+        <tr>
+          <td><code>returnBatch()</code></td>
+          <td>Assigned Verifier</td>
+          <td>State is <code>PROCESSED_CLAIMED</code>; ReturnReason in 1..4.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+        <tr>
+          <td><code>rejectBatch()</code></td>
+          <td>Assigned Verifier</td>
+          <td>State is <code>PROCESSED_CLAIMED</code>; RejectReason in 1..4.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+        <tr>
+          <td><code>cancelBatch()</code></td>
+          <td>Assigned Registrar</td>
+          <td>State is <code>REGISTERED</code> (pre-collection only). Admin cannot cancel.</td>
+          <td><code>BatchStateChanged</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="running-footer">
+    <span>LoopProof Project Brief &bull; IEEE ClimateChain 2026</span>
+    <span><a href="https://loop-proof.vercel.app/">https://loop-proof.vercel.app/</a></span>
+    <span>Page 4 of 5</span>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     PAGE 5: VERIFICATION, LIMITATIONS & FUTURE ROADMAP
+     ========================================================================== -->
+<section class="page" id="page-5">
+  <div class="running-header">
+    <span>LoopProof &bull; IEEE ClimateChain Global Hackathon 2026</span>
+    <span>Verification, Limitations &amp; Future Roadmap</span>
+  </div>
+
+  <div class="page-body">
+    <div class="section-title">
+      <span>5. Verification Results &amp; Engineering Rigor</span>
+      <span class="section-tag">Tested Scenarios</span>
+    </div>
+
+    <div class="metric-row">
+      <div class="metric-card">
+        <div class="metric-num">162</div>
+        <div class="metric-label">Solidity Mocha Tests Passing (Local Hardhat)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-num">55</div>
+        <div class="metric-label">Web &amp; Schema Guard Tests Passing (Node Runner)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-num">64</div>
+        <div class="metric-label">Exhaustive State &times; Action Matrix Reversions</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-num">0</div>
+        <div class="metric-label">TypeScript Typecheck &amp; Build Errors</div>
+      </div>
+    </div>
+
+    <div class="subsection-title">Test Suite Coverage Breakdown</div>
+    <table class="editorial-table">
+      <thead>
+        <tr>
+          <th style="width: 28%;">Test Suite Category</th>
+          <th style="width: 14%;">Count</th>
+          <th style="width: 58%;">Verified Invariants &amp; Boundary Conditions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Access Control &amp; Roles</td>
+          <td>11 tests</td>
+          <td>Only assigned accounts with active roles can execute transitions. Role revoking blocks pending actions.</td>
+        </tr>
+        <tr>
+          <td>Canonical Lifecycle Paths</td>
+          <td>11 tests</td>
+          <td>Linear progression <code>REGISTERED &rarr; COLLECTED &rarr; RECEIVED &rarr; PROCESSED &rarr; VERIFIED</code>. Multi-batch isolation.</td>
+        </tr>
+        <tr>
+          <td>Exhaustive State Matrix</td>
+          <td>64 tests</td>
+          <td>Parameterized 8 &times; 8 <code>(State &times; Action)</code> matrix: every unauthorized transition pair cleanly reverts.</td>
+        </tr>
+        <tr>
+          <td>Terminal Immutability</td>
+          <td>3 tests</td>
+          <td><code>VERIFIED</code>, <code>REJECTED</code>, and <code>CANCELLED</code> batches reject all subsequent function calls.</td>
+        </tr>
+        <tr>
+          <td>Evidence &amp; Key Rejection</td>
+          <td>10 tests</td>
+          <td>Duplicate claim keys and previously used evidence SHA-256 hashes revert globally across the system.</td>
+        </tr>
+        <tr>
+          <td>Verifier Independence</td>
+          <td>5 tests</td>
+          <td>Self-verification by collectors or processors holding <code>VERIFIER_ROLE</code> is strictly rejected.</td>
+        </tr>
+        <tr>
+          <td>Mass-Balance Validation</td>
+          <td>9 tests</td>
+          <td>Total output mass &le; intake mass, intake = 0 revert, intake + 1g revert, bounds (1..16 fractions), overflow protection.</td>
+        </tr>
+        <tr>
+          <td>Revisions &amp; Reason Codes</td>
+          <td>19 tests</td>
+          <td>Revision history preservation, fresh evidence requirement, typed ReturnReason and RejectReason enums.</td>
+        </tr>
+        <tr>
+          <td>Web App &amp; Schema Guards</td>
+          <td>55 tests</td>
+          <td>Node test runner: route isolation, demo data invariants, enum alignment with Solidity, client RPC helpers, and static migration security checks.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title" style="margin-top: 3px;">
+      <span>6. Transparent Limitations &amp; Disclosures</span>
+      <span class="section-tag">Honest Scope</span>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <p><strong>1. Synthetic Prototype Data:</strong> The 7 demo batches on the public dashboard (<code>web/lib/demo-data.ts</code>) are synthetic mock records created for UI demonstration. They do not represent real-world physical devices, recycling facilities, or actual laboratory assays.</p>
+        <p><strong>2. Evidence-File Integrity vs. Physical Truth:</strong> An anchored SHA-256 digest checks evidence-file integrity&mdash;confirming that the digital document has not been altered since registration. It does <em>not</em> prove that the document was truthful when written, nor that physical recycling took place.</p>
+      </div>
+      <div>
+        <p><strong>3. Local Hardhat Execution Status:</strong> Solidity contracts have been thoroughly tested on a simulated local Hardhat network (EVM <code>chainId 31337</code>). They are not deployed to any public testnet or mainnet. The live app records actions in Supabase, not on-chain.</p>
+        <p><strong>4. Absence of Security Audit:</strong> The codebase is an academic prototype developed for the hackathon. It has not undergone an independent professional third-party smart contract security audit.</p>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top: 3px;">
+      <span>7. Future Work &amp; Production Roadmap</span>
+      <span class="section-tag">Next Milestones</span>
+    </div>
+
+    <div class="two-col" style="margin-bottom: 4px;">
+      <div>
+        <div class="subsection-title">Phase 1: Public Testnet &amp; Subgraph Indexing</div>
+        <p>Deploy <code>LoopProofRegistry.sol</code> to the Base Sepolia testnet with public Etherscan verification. Implement a decentralized indexing subgraph (The Graph / Goldsky) to serve historical batch revisions and queryable proof trees directly to client applications.</p>
+        <div class="subsection-title">Phase 2: Multi-Party Verifier Quorum</div>
+        <p>Transition from single-verifier assignments to a decentralized verification pool. Implement threshold BLS signatures requiring k-of-n independent accredited auditors to sign off on high-volume or hazardous material streams.</p>
+      </div>
+      <div>
+        <div class="subsection-title">Phase 3: Automated IoT Scale Integration</div>
+        <p>Connect certified industrial weighing platforms directly to registrar and collector modules. Use cryptographic hardware security modules (HSMs) on weighbridges to sign gross-tare-net tickets directly at the facility gate.</p>
+        <div class="subsection-title">Phase 4: Downstream Material Passports</div>
+        <p>Issue ERC-1155 tokens or W3C Verifiable Credentials for recovered commodity fractions (copper, aluminum, refined gold) to enable circular manufacturing procurement with verifiable recycled content.</p>
+      </div>
+    </div>
+
+    <div class="callout callout-sage" style="padding: 5px 8px; margin-bottom: 4px;">
+      <div class="callout-title" style="font-size: 8.5px;">Student Builder Commentary &amp; Hackathon Reflection</div>
+      <p style="font-size: 7.8px; margin-bottom: 0; line-height: 1.35;">Our central engineering objective was resisting the temptation of Web3 speculation. Rather than minting tokens or claiming that distributed ledgers magically eliminate physical fraud, we constrained LoopProof to what cryptography can honestly guarantee: evidence-file integrity checking, rigorous separation of duties, and mathematical mass-balance conservation. This discipline produced a resilient prototype that directly addresses greenwashing in e-waste supply chains.</p>
+    </div>
+
+    <div class="axiom-card" style="padding: 6px 10px; margin-bottom: 0;">
+      <div style="font-size: 8.3px; color: var(--forest-950); font-weight: 500;">
+        <strong>Project Evaluation Links:</strong> Explore the live interactive application at <a href="https://loop-proof.vercel.app/" target="_blank" rel="noopener noreferrer">https://loop-proof.vercel.app/</a> or inspect the complete smart contracts, migrations, and test suites at <a href="https://github.com/vishu2212/LoopProof" target="_blank" rel="noopener noreferrer">https://github.com/vishu2212/LoopProof</a>.
+      </div>
+    </div>
+  </div>
+
+  <div class="running-footer">
+    <span>LoopProof Project Brief &bull; IEEE ClimateChain 2026</span>
+    <span><a href="https://loop-proof.vercel.app/">https://loop-proof.vercel.app/</a></span>
+    <span>Page 5 of 5</span>
+  </div>
+</section>
+
+</body>
+</html>

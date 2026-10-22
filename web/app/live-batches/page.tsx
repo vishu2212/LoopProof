@@ -42,7 +42,6 @@ export default async function LiveBatchesPage() {
     return (
       <div className="page">
         <header className="page-header">
-          <p className="eyebrow">Live Supabase Registry · Authentication Required</p>
           <h1>Live Batch Registry</h1>
           <p className="lede">
             Live database records in Supabase are protected by Row Level Security. Anonymous access
@@ -55,8 +54,12 @@ export default async function LiveBatchesPage() {
         <section className="card" role="note">
           <h2>Sign-in required to view or register live batches</h2>
           <p className="muted">
-            {sessionState.authError ??
-              "No authenticated Supabase session reached the server. Sign in to view batches where your account is an assigned participant or to register a batch."}
+            {sessionState.authError?.toLowerCase().includes("refresh token") ||
+            sessionState.authError?.toLowerCase().includes("jwt") ||
+            sessionState.authError?.toLowerCase().includes("expired")
+              ? "Your previous session has expired or is no longer valid. Sign in with your Supabase credentials to access RLS-scoped batch records."
+              : (sessionState.authError ??
+                "No authenticated Supabase session reached the server. Sign in to view batches where your account is an assigned participant or to register a batch.")}
           </p>
           <p>
             <Link href="/login" className="btn btn--primary">
@@ -91,7 +94,6 @@ export default async function LiveBatchesPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <p className="eyebrow">Live Supabase Database · RLS-Scoped Records</p>
         <h1>Live Batch Registry</h1>
         <p className="lede">
           Connected to Supabase project <code>tvsjrxjvmebbofjdzxnm</code>. Only batches where your

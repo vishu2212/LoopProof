@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CopyableHash } from "@/components/CopyableHash";
 import { LifecycleStepper } from "@/components/LifecycleStepper";
 import { ReviewChecklist } from "@/components/ReviewChecklist";
 import { StateBadge } from "@/components/StateBadge";
@@ -13,7 +14,7 @@ import {
 } from "@/lib/demo-data";
 import { formatGrams, formatUtc } from "@/lib/format";
 import { impactStatus } from "@/lib/impact";
-import { REASON_MEANING, reviewStatusFor } from "@/lib/lifecycle";
+import { REASON_MEANING, reviewStatusFor, type BatchState } from "@/lib/lifecycle";
 
 type Params = { batchId: string };
 
@@ -27,6 +28,83 @@ export const dynamicParams = false;
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { batchId } = await params;
   return { title: `Batch ${batchId}` };
+}
+
+function getWorkflowGuidance(state: BatchState, collector: string, processor: string, verifier: string, returnReason?: string, rejectReason?: string) {
+  switch (state) {
+    case "REGISTERED":
+      return {
+        responsible: `Assigned Collector (${collector})`,
+        title: "Awaiting physical intake and collection evidence",
+        action: "The collector must physically collect the e-waste lot, record certified scale weight, and anchor a Collection Record with scale slip hash before advancing to COLLECTED.",
+        constraint: "Mass balance and custody transfer remain locked until physical collection is anchored.",
+        tone: "progress",
+      };
+    case "COLLECTED":
+      return {
+        responsible: `Assigned Processor (${processor})`,
+        title: "Awaiting receiving dock confirmation",
+        action: "The processor must confirm arrival at the processing facility, verify tamper seals, and upload a Facility Receipt Record to advance to RECEIVED.",
+        constraint: "Processing claim cannot be lodged prior to confirmed receipt.",
+        tone: "progress",
+      };
+    case "RECEIVED":
+      return {
+        responsible: `Assigned Processor (${processor})`,
+        title: "Awaiting processing claim & mass-balance submission",
+        action: "The processor must complete sorting, shredding, and material separation, then lodge a Processing Claim detailing recovered mass fractions (copper, circuit boards, plastics).",
+        constraint: "Total recovered mass must not exceed intake mass (conservation of mass rule).",
+        tone: "progress",
+      };
+    case "PROCESSED_CLAIMED":
+      return {
+        responsible: `Independent Verifier (${verifier})`,
+        title: "Action Required: Independent verifier audit pending",
+        action: "The assigned independent verifier must audit evidence integrity, review mass balance sheets, and anchor an on-chain decision: VERIFY, RETURN, or REJECT.",
+        constraint: "Independent verifier must be distinct from both collector and processor (STATE_MACHINE rule 3).",
+        tone: "claim",
+      };
+    case "RETURNED":
+      return {
+        responsible: `Assigned Processor (${processor})`,
+        title: "Action Required: Rectification and resubmission needed",
+        action: `Verifier returned batch for reason: ${returnReason ?? "Documentation discrepancy"}. Processor must resolve discrepancy and submit new evidence revision.`,
+        constraint: "Resubmission increments revision counter and requires fresh verifier approval.",
+        tone: "warn",
+      };
+    case "REJECTED":
+      return {
+        responsible: "Terminal State — Final Decision",
+        title: "Batch rejected by independent verifier",
+        action: `Verifier rejected batch for reason: ${rejectReason ?? "Non-compliance"}. Terminal state reached; no further custody transitions or impact claims permitted.`,
+        constraint: "Rejection is irreversible in the state machine (Rule D-14).",
+        tone: "bad",
+      };
+    case "VERIFIED":
+      return {
+        responsible: "Independent Verification Complete",
+        title: "Lifecycle verified by independent audit",
+        action: "Chain of custody, stage evidence hashes, and mass balance are independently verified and anchored.",
+        constraint: "Impact Gate: Environmental impact figures remain gated until backed by cited public factors.",
+        tone: "ok",
+      };
+    case "CANCELLED":
+      return {
+        responsible: "Registrar (Pre-Collection Terminal Event)",
+        title: "Batch cancelled prior to collection",
+        action: "The registrar cancelled this batch before physical pickup occurred. No collection slips or processing claims were generated.",
+        constraint: "Cancellation is terminal before collection; custody handoffs remain closed (STATE_MACHINE rule 2).",
+        tone: "neutral",
+      };
+    default:
+      return {
+        responsible: "Custodian",
+        title: "Batch in progress",
+        action: "Awaiting next lifecycle progression.",
+        constraint: "Evidence required at every transition.",
+        tone: "neutral",
+      };
+  }
 }
 
 export default async function BatchDetailPage({ params }: { params: Promise<Params> }) {
@@ -43,15 +121,33 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
   const impact = impactStatus(batch);
   const awaitingReview = batch.state === "PROCESSED_CLAIMED";
 
+  const guidance = getWorkflowGuidance(
+    batch.state,
+    batch.collector,
+    batch.processor,
+    batch.verifier,
+    batch.outcome?.kind === "returned" ? batch.outcome.reason : undefined,
+    batch.outcome?.kind === "rejected" ? batch.outcome.reason : undefined,
+  );
+
+  const recoveryPct =
+    batch.intakeMassGrams > 0 && outputsTotal > 0
+      ? Math.round((outputsTotal / batch.intakeMassGrams) * 100)
+      : 0;
+
   return (
     <div className="page">
       <div className="detail-topbar">
         <nav aria-label="Breadcrumb" className="breadcrumb">
-          <Link href="/">Dashboard</Link> <span aria-hidden="true">/</span>{" "}
-          <span aria-current="page">{batch.id}</span>
+          <Link href="/" className="breadcrumb__back">
+            ← Overview
+          </Link>
+          <span aria-hidden="true" className="breadcrumb__sep">/</span>
+          <span aria-current="page" className="breadcrumb__current">{batch.id}</span>
         </nav>
+
         <nav aria-label="Switch demo batch" className="batch-switcher">
-          <span className="batch-switcher__label">Batch:</span>
+          <span className="batch-switcher__label">Demo batch:</span>
           <ul className="batch-switcher__list">
             {DEMO_BATCHES.map((b) => (
               <li key={b.id}>
@@ -67,13 +163,14 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
           </ul>
         </nav>
       </div>
+
       <div className="detail-demo-disclosure" role="note">
-        <strong>DEMO</strong> Synthetic demo data · Prototype only. Backend and blockchain are not connected.
+        <strong>SYNTHETIC DEMO</strong> Prototype only. Backend and blockchain are not connected.
+        All identifiers, hashes, and mass figures below are demonstration placeholders.
       </div>
 
       <header className="detail-header card">
         <div className="detail-header__main">
-          <p className="eyebrow">Batch Custody &amp; Evidence Record (Synthetic)</p>
           <div className="detail-header__title-row">
             <h1>Batch {batch.id}</h1>
             <StateBadge state={batch.state} />
@@ -96,17 +193,18 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
             <strong>{DEMO_DATA_NOTICE}</strong> Names, times, masses and hashes below are invented.
           </p>
         </div>
+
         <div className="detail-header__meta">
           <div className="detail-stat">
             <span className="detail-stat__label">Recorded Intake</span>
             <strong className="detail-stat__value">
-              {batch.intakeMassGrams > 0 ? formatGrams(batch.intakeMassGrams) : "Not collected"}
+              {batch.intakeMassGrams > 0 ? `${(batch.intakeMassGrams / 1000).toFixed(1)} kg (${formatGrams(batch.intakeMassGrams)})` : "Not collected"}
             </strong>
           </div>
           <div className="detail-stat">
             <span className="detail-stat__label">Claimed Output</span>
             <strong className="detail-stat__value">
-              {batch.outputsGrams.length > 0 ? formatGrams(outputsTotal) : "No claim yet"}
+              {batch.outputsGrams.length > 0 ? `${(outputsTotal / 1000).toFixed(1)} kg (${formatGrams(outputsTotal)})` : "No claim yet"}
             </strong>
           </div>
           <div className="detail-stat">
@@ -117,6 +215,37 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
           </div>
         </div>
       </header>
+
+      {/* Next Action & Workflow Guidance Banner */}
+      <section className={`workflow-guidance-card workflow-guidance-card--${guidance.tone}`} aria-label="Workflow next step guidance">
+        <div className="workflow-guidance-card__header">
+          <span className="workflow-guidance-card__badge">NEXT WORKFLOW STAGE</span>
+          <span className="workflow-guidance-card__actor">Responsible: <strong>{guidance.responsible}</strong></span>
+        </div>
+        <h2 className="workflow-guidance-card__title">{guidance.title}</h2>
+        <p className="workflow-guidance-card__action">{guidance.action}</p>
+        <div className="workflow-guidance-card__rule">
+          <span className="workflow-guidance-card__rule-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+              <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+              <path d="M7 21h10" />
+              <path d="M12 3v18" />
+              <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
+            </svg>
+          </span>
+          <span><strong>Integrity Gate:</strong> {guidance.constraint}</span>
+        </div>
+      </section>
 
       {batch.outcome ? (
         <section
@@ -261,7 +390,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
                         <time dateTime={e.submittedAt}>{formatUtc(e.submittedAt)}</time>
                       </td>
                       <td>
-                        <code>{e.hashPlaceholder}</code>
+                        <CopyableHash hash={e.hashPlaceholder} label={`Evidence ${e.id} hash`} />
                       </td>
                       <td>{e.note}</td>
                     </tr>
@@ -280,6 +409,64 @@ export default async function BatchDetailPage({ params }: { params: Promise<Para
                   ? "The verifier accepted this claim; that is a recorded decision, not proof of physical recycling."
                   : "Not verified."}
               </p>
+
+              {/* Visual Mass Balance Bar */}
+              <div className="mass-balance-visual">
+                <div className="mass-balance-visual__header">
+                  <span><strong>Mass Balance Audit:</strong> {(outputsTotal / 1000).toFixed(1)} kg ({formatGrams(outputsTotal)}) recovered of {(batch.intakeMassGrams / 1000).toFixed(1)} kg ({formatGrams(batch.intakeMassGrams)}) intake ({recoveryPct}%)</span>
+                  <span className="mass-balance-visual__status">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      style={{ display: "inline-block", verticalAlign: "middle", marginRight: "3px" }}
+                    >
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Validated (Output ≤ Intake)
+                  </span>
+                </div>
+                <div
+                  className="mass-balance-visual__bar"
+                  role="progressbar"
+                  aria-valuenow={recoveryPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuetext={`${recoveryPct}% recovered (${(outputsTotal / 1000).toFixed(1)} kg of ${(batch.intakeMassGrams / 1000).toFixed(1)} kg intake)`}
+                >
+                  <div
+                    className="mass-balance-visual__fill mass-balance-visual__fill--recovered"
+                    style={{ width: `${Math.min(100, recoveryPct)}%` }}
+                    title={`Recovered material: ${formatGrams(outputsTotal)} (${recoveryPct}%)`}
+                  />
+                  {unrecoveredGrams > 0 ? (
+                    <div
+                      className="mass-balance-visual__fill mass-balance-visual__fill--loss"
+                      style={{ width: `${Math.max(0, 100 - recoveryPct)}%` }}
+                      title={`Process loss: ${formatGrams(unrecoveredGrams)} (${100 - recoveryPct}%)`}
+                    />
+                  ) : null}
+                </div>
+                <div className="mass-balance-visual__legend">
+                  <span className="mass-balance-visual__legend-item">
+                    <span className="mass-balance-visual__color mass-balance-visual__color--recovered" />
+                    Recovered Fractions ({formatGrams(outputsTotal)})
+                  </span>
+                  {unrecoveredGrams > 0 ? (
+                    <span className="mass-balance-visual__legend-item">
+                      <span className="mass-balance-visual__color mass-balance-visual__color--loss" />
+                      Unrecovered Loss / Residue ({formatGrams(unrecoveredGrams)})
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
               <ul className="outputs-list">
                 {batch.outputsGrams.map((o) => (
                   <li key={o.material} className="outputs-list__item">

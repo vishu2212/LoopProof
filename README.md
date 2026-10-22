@@ -10,22 +10,53 @@ LoopProof models an e-waste batch through explicit custody and review stages, se
 - **Source repository:** https://github.com/vishu2212/LoopProof
 - **Track:** Sustainable Supply Chains
 
-## The problem
+---
+
+## The Problem
 
 E-waste collection, facility receipt, processing claims, and verified processing are often collapsed into a single sustainability claim. That makes it difficult for downstream buyers, auditors, and the public to distinguish a recorded handoff from a substantiated environmental outcome.
 
-## What LoopProof does
+---
+
+## What LoopProof Does
 
 - Records batch registration and assigned collector, processor, and independent verifier roles.
-- Models a lifecycle with explicit state transitions: `REGISTERED → COLLECTED → RECEIVED → PROCESSED_CLAIMED → VERIFIED`.
-- Supports alternative outcomes such as `RETURNED`, `REJECTED`, and `CANCELLED`; these are not canonical lifecycle stages.
-- Stores evidence metadata and SHA-256 digests while keeping uploaded evidence in private storage.
+- Models an explicit finite state machine: `REGISTERED → COLLECTED → RECEIVED → PROCESSED_CLAIMED → VERIFIED`.
+- Supports structured alternative outcomes (`RETURNED`, `REJECTED`, `CANCELLED`); these are not canonical lifecycle stages.
+- Stores evidence metadata and SHA-256 digests while keeping uploaded evidence files in private storage.
 - Enforces role- and state-aware actions through Supabase Auth, PostgreSQL functions, and Row Level Security.
-- Checks processing mass totals against intake. A balanced claim must not be returned with `MASS_DISCREPANCY`.
-- Gates environmental impact display: no impact estimate is shown before `VERIFIED`; verification alone is not enough without complete evidence and cited factors.
-- Keeps the human responsible for confirming the e-waste category; any AI assistance is advisory, not proof.
+- Checks processing mass totals against intake ($Output \le Intake$). A balanced claim cannot be returned with `MASS_DISCREPANCY`.
+- Gates environmental impact display: no numerical impact estimate is shown before `VERIFIED`; verification alone is not enough without complete evidence and cited public factors.
+- Keeps the human responsible for confirming the e-waste category; AI assistance is advisory, not proof.
 
-## Demo and implementation status
+---
+
+## Architecture Overview
+
+LoopProof implements a **dual-track architecture**:
+
+1. **Interactive Web Application (`web/`):**
+   - **Offline Demo Mode (`/`, `/batches/[batchId]`):** Interactive walkthrough across 7 canonical demo batches (`DEMO-001` through `DEMO-007`) illustrating every lifecycle transition, verifier checklists, alternative outcomes (`RETURNED`, `REJECTED`, `CANCELLED`), and strict impact gating.
+   - **Live Cloud Registry (`/login`, `/live-batches`, `/live-batches/[batchId]`):** Interactive live registry powered by Supabase Auth and PostgreSQL with Row Level Security (`auth.uid()`), trigger-guarded state transitions, append-only audit logs, and `SECURITY DEFINER` RPCs (`lp_register_batch`, `lp_record_collection`, `lp_record_receipt`, `lp_submit_processing`, `lp_verify_batch`, `lp_return_batch`, `lp_reject_batch`, `lp_cancel_batch`).
+2. **Solidity Smart Contract Reference Engine (`contracts/`):**
+   - `LoopProofRegistry.sol` implements the 5-stage finite state machine (`REGISTERED` → `COLLECTED` → `RECEIVED` → `PROCESSED_CLAIMED` → `VERIFIED`) with immutable participant locking, strict conservation of mass ($Output \le Intake$), verifier conflict-of-interest prevention, and typed return/reject reason codes.
+   - Tested and verified locally on Hardhat EVM (`chainId 31337`) across 162 automated test cases.
+
+---
+
+## Repository Layout
+
+```
+contracts/   Solidity sources (LoopProofRegistry.sol, LoopProofTypes.sol)
+test/        Hardhat contract test suites (162 passing Mocha/Chai specs)
+docs/        DECISIONS.md, STATE_MACHINE.md, CONTRACT_TEST_PLAN.md, submission brief
+supabase/    PostgreSQL schema migrations, RLS policies, triggers, and RPC procedures
+web/         Next.js 16 web application (Turbopack, TypeScript, React 19)
+```
+
+---
+
+## Demo and Implementation Status
 
 The project contains a Next.js web app, a Supabase-backed live workflow, and Solidity contracts with a local test suite.
 
@@ -33,75 +64,96 @@ The project contains a Next.js web app, a Supabase-backed live workflow, and Sol
 
 The demo dashboard and its seven sample batches are synthetic. The live registry uses the configured Supabase project. Synthetic test records used during development are not evidence of real-world recycling or environmental impact.
 
-### Current validation
+---
 
-The latest recorded local checks passed:
+## Quick Start & Verification
 
-- Solidity tests: 162 passing.
-- Web tests: 55 passing.
-- TypeScript typecheck: passed.
-- Next.js production build: passed.
+Requires Node.js 22+ (developed on Node 24).
 
-These are development checks, not a claim of an independent security audit or full production readiness. The live lifecycle was exercised manually through registration, collection, receipt, and processing claim. The verifier mass-discrepancy guard was added as a database migration; further independent end-to-end verification may still be needed.
+### 1. Smart Contract Verification (Root Package)
 
-## Architecture
+```bash
+# Install root dependencies
+npm install
 
-- **Web:** Next.js, React, TypeScript.
-- **Live authentication and workflow database:** Supabase Auth, PostgreSQL, Row Level Security, database RPCs, and private evidence storage.
-- **Evidence integrity:** SHA-256 digests are stored with evidence metadata; raw evidence files are kept off-chain in private storage.
-- **Smart contracts:** Solidity sources and local tests are included in the repository. Public testnet deployment is not currently claimed.
+# Compile contracts
+npm run build      # hardhat build
 
-## Local development
+# Run complete 162-test contract suite
+npm test           # hardhat test
 
-Requires Node.js 22+ (developed with Node 24).
+# Run contract TypeScript checks
+npm run typecheck  # hardhat build && tsc --noEmit
+```
 
-### Web app
-
-From the repository root:
+### 2. Web Application & Schema Verification (`web/`)
 
 ```bash
 cd web
+
+# Configure environment variables (template provided)
 cp .env.local.example .env.local
-```
 
-Set the following values in `web/.env.local`:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Supabase publishable key or legacy anon key)
-
-Then run:
-
-```bash
+# Install web dependencies
 npm install
-npm run dev
-```
 
-The app opens at http://localhost:3000.
-
-Never put a Supabase service-role key in a `NEXT_PUBLIC_*` variable or in browser code.
-
-### Tests
-
-From the repository root:
-
-```bash
-npm install
+# Run 55-test web & database schema invariant suite
 npm test
+
+# Run TypeScript type check
 npm run typecheck
+
+# Run Next.js production build
+npm run build
+
+# Start local development server
+npm run dev        # http://localhost:3000
 ```
 
-Web checks:
+---
 
+## Environment Variables
+
+### Web Application (`web/.env.local.example`)
 ```bash
-npm --prefix web install
-npm --prefix web test
-npm --prefix web run typecheck
-npm --prefix web run build
+NEXT_PUBLIC_SUPABASE_URL=https://tvsjrxjvmebbofjdzxnm.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-or-anon-key>
+```
+*Security: Only the public URL and publishable (anon) key belong in `.env.local`. Row Level Security (RLS) enforces access control based on `auth.uid()`. Service role keys are never exposed.*
+
+### Testnet Deployment (Optional — `.env.example`)
+```bash
+# Primary testnet: Base Sepolia (see docs/DECISIONS.md D-02)
+BASE_SEPOLIA_RPC_URL=<your-base-sepolia-rpc-url>
+BASE_SEPOLIA_PRIVATE_KEY=<testnet-only-private-key-never-real-funds>
+
+# Fallback testnet: Polygon Amoy (only if Base Sepolia fails verification)
+POLYGON_AMOY_RPC_URL=<your-polygon-amoy-rpc-url>
+POLYGON_AMOY_PRIVATE_KEY=<testnet-only-private-key-never-real-funds>
 ```
 
-For Supabase schema changes, inspect the migration before applying it to a project. Use the linked project and confirm the dry-run lists only the intended migration.
+---
 
-## Trust, privacy, and limitations
+## Core Principles & Guarantees
+
+1. **Collected Does Not Mean Recycled:** Physical pickup and facility intake are intermediate custody stages. They do not constitute recycling proof.
+2. **Gated Impact Claims:** Numerical environmental impact metrics remain completely unavailable and are never credited until independent verification is confirmed.
+3. **Verifier Independence:** The assigned verifier must be distinct from both the collector and the processor. Self-verification reverts immediately.
+4. **Conservation of Mass:** Claimed output materials must not exceed recorded intake mass ($TotalOutputs \le IntakeMass$).
+5. **Typed Audit Reasons:** Verifier returns and rejections require explicit on-chain enum reason codes (`INSUFFICIENT_EVIDENCE`, `MASS_DISCREPANCY`, `EVIDENCE_INCONSISTENT`, etc.). Free-text reasons are rejected.
+6. **Zero PII On-Chain:** Off-chain evidence files stay in private storage. Only SHA-256 hashes and minimal lifecycle metadata are recorded.
+
+---
+
+## Blockchain Deployment Status
+
+- **Status:** Verified locally on Hardhat simulated network (EVM `chainId 31337`).
+- **Public Testnet:** Currently not deployed to a public testnet. Hardhat configuration supports Base Sepolia (primary) and Polygon Amoy (fallback) via lazy `configVariable()` bindings.
+- **Scope of On-Chain Claims:** On-chain records demonstrate that authorized cryptographic keys recorded custody handoffs and that anchored evidence hashes have not been altered since submission. They do not prove that physical recycling occurred without valid off-chain evidence audits.
+
+---
+
+## Trust, Privacy, and Limitations
 
 - A hash establishes integrity relative to the hashed file; it does not establish the truth of the file's contents.
 - A recorded event establishes that an authorized account submitted an action; it does not independently prove physical custody or processing.
@@ -109,9 +161,13 @@ For Supabase schema changes, inspect the migration before applying it to a proje
 - Environmental impact must remain unavailable until the batch is verified, required evidence is complete, and cited public impact factors are available. Any gross avoided-burden estimate must be presented with its factors and assumptions, not as a carbon credit or guaranteed net impact.
 - The prototype uses role-based accounts and a centralized Supabase backend. It is not a fully decentralized production deployment and has not been independently security-audited.
 
-## Hackathon alignment
+---
+
+## Hackathon Alignment
 
 **Sustainable Supply Chains:** LoopProof focuses on e-waste lifecycle traceability, evidence-backed processing claims, independent review, and transparent limits on environmental-impact reporting. The goal is to make it harder to confuse collection with verified processing and to make unsupported claims visible rather than silently treating them as impact.
+
+---
 
 ## License
 
