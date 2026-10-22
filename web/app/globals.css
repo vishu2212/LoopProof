@@ -258,6 +258,26 @@ h3 {
   border-radius: var(--radius-xs);
 }
 
+.demo-banner--live {
+  background: #EBF4F0;
+  border-bottom: 1px solid #B7D9CC;
+  color: #143823;
+}
+
+.demo-banner--neutral {
+  background: #F6F4ED;
+  border-bottom: 1px solid #DBD4C4;
+  color: #404843;
+}
+
+.demo-banner__pill--live {
+  background: #143823;
+}
+
+.demo-banner__pill--neutral {
+  background: #5C635E;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -533,6 +553,14 @@ h3 {
   height: 7px;
   border-radius: 50%;
   background: #a86f1d;
+}
+
+.topbar__context-dot--live {
+  background: var(--progress);
+}
+
+.topbar__context-dot--neutral {
+  background: var(--muted);
 }
 
 .topbar__link {

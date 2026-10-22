@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { DEMO_DATA_NOTICE } from "@/lib/demo-data";
+import { WorkspaceBanner } from "@/components/WorkspaceBanner";
+import { WorkspaceTopbarTools } from "@/components/WorkspaceTopbarTools";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,10 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a href="#main" className="skip-link">
           Skip to main content
         </a>
-        <div className="demo-banner" role="note">
-          <span className="demo-banner__pill">SYNTHETIC DEMO</span>
-          <span><strong>Workspace Mode:</strong> {DEMO_DATA_NOTICE} (Navigate to <em>Live Registry</em> for connected Supabase DB).</span>
-        </div>
+        <WorkspaceBanner className="demo-banner" />
         <div className="app-shell">
           <aside className="sidebar" aria-label="Application sidebar">
             <div className="sidebar__header">
@@ -117,15 +115,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
                 <span className="topbar__status-tag">Audit Ledger · v0.1</span>
               </div>
-              <div className="topbar__tools">
-                <span className="topbar__context-pill" title="Currently viewing local synthetic demo fixtures">
-                  <span className="topbar__context-dot" aria-hidden="true" />
-                  Demo Mode (Offline Fixtures)
-                </span>
-                <Link href="/live-batches" className="topbar__link" title="Open connected Supabase database registry">
-                  Switch to Live Registry →
-                </Link>
-              </div>
+              <WorkspaceTopbarTools />
             </header>
 
             <main id="main" className="app-main" tabIndex={-1}>
@@ -140,7 +130,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <p className="muted">
                 On-chain records would show that authorized keys recorded actions and that anchored
                 evidence hashes are unaltered. They do not prove that physical recycling occurred.
-                This prototype has no live connection to any backend, database, or blockchain.
+                Smart contracts are verified locally on Hardhat EVM (chainId 31337) and are not deployed to a public blockchain.
               </p>
             </footer>
           </div>

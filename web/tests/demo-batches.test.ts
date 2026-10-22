@@ -9,6 +9,7 @@ import {
   getBatch,
   getStaticBatchIds,
 } from "../lib/demo-data.ts";
+import { getWorkspaceMode } from "../lib/workspace-context.ts";
 import { impactStatus } from "../lib/impact.ts";
 import {
   ALLOWED_TRANSITIONS,
@@ -332,3 +333,17 @@ test("UI structure: sidebar, compact top bar, 4 summary cards, lifecycle, recent
   }
 });
 
+test("workspace context: route-aware mode resolution for demo, live, and auth routes", () => {
+  assert.equal(getWorkspaceMode("/"), "demo");
+  assert.equal(getWorkspaceMode("/batches/DEMO-001"), "demo");
+  assert.equal(getWorkspaceMode("/batches/DEMO-005"), "demo");
+  assert.equal(getWorkspaceMode("/live-batches"), "live");
+  assert.equal(getWorkspaceMode("/live-batches/"), "live");
+  assert.equal(getWorkspaceMode("/live-batches/d0000000-0000-0000-0000-000000000001"), "live");
+  assert.equal(getWorkspaceMode("/login"), "auth");
+  assert.equal(getWorkspaceMode("/login/"), "auth");
+  assert.equal(getWorkspaceMode("/logistics"), "demo");
+  assert.equal(getWorkspaceMode("/live-batches-fake"), "demo");
+  assert.equal(getWorkspaceMode(null), "demo");
+  assert.equal(getWorkspaceMode(undefined), "demo");
+});
