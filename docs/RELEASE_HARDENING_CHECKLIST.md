@@ -55,18 +55,27 @@ These steps require direct access to your deployed Supabase project (`tvsjrxjvme
    - Confirm **no UPDATE or DELETE policies** exist on `storage.objects` or `storage.buckets` for authenticated or anon roles (evidence must be append-only). *(Verified: No UPDATE or DELETE policies exist).*
 
 ### B. Supabase Migrations & Database Schema
+
+> [!CAUTION]
+> **Production Safety Warning:** Never run `supabase db push` against production blindly or merely to synchronize migration history. Any database push can alter live database objects, lock tables, or overwrite schema definitions. Every migration must be pre-audited, and both `supabase migration list` and `supabase db push --dry-run` are mandatory prerequisites before any forward application.
+
 1. **Migration Ground Truth (Verified via `supabase migration list`):**
    - `20261020000000_loopproof_core_schema.sql`: **Applied on remote database.**
    - `20261021000000_verifier_mass_discrepancy_guard.sql`: **Applied on remote database.**
-   - `20261022000000_align_storage_mime_types.sql`: **Pending remote application.** *(Note: Live dashboard settings already enforce PDF/JPEG/PNG, so applying this migration synchronizes the migration history table).*
-2. Dry-run verification before pushing:
+   - `20261022000000_align_storage_mime_types.sql`: **Pending remote application.** *(Note: Even though live dashboard settings already restrict MIME types to PDF/JPEG/PNG, this migration must still be checked against actual remote database state and table constraints before executing any push. Do not push merely to synchronize migration history).*
+2. **Mandatory Pre-Push Inspection & Dry-Run:**
+   Before applying any migration to the remote project, you must inspect remote migration status and execute a dry run:
    ```bash
    # In terminal with Supabase CLI linked:
    supabase migration list
    supabase db push --dry-run
    ```
-3. To record the forward migration in remote history:
+   - Carefully inspect and understand the dry-run output (diff, statements, and affected schemas).
+   - Verify that existing live tables, RLS policies, custom RPC functions, and storage buckets will not be disrupted or overwritten.
+3. **Controlled Remote Application (Owner-Only):**
+   Only after the dry run has been thoroughly reviewed, understood, and confirmed safe:
    ```bash
+   # Apply verified pending migrations:
    supabase db push
    ```
 
