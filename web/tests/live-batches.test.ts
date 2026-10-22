@@ -17,6 +17,7 @@ import {
   LIVE_VERIFIER_CHECKLIST,
   cancelBatchWithRpc,
   computeEvidenceSha256Hex,
+  evidenceMatchesMimeSignature,
   decideBatchWithRpc,
   formatByteaHex,
   formatDatabaseError,
@@ -500,6 +501,16 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
   const samplePdfBytes = new TextEncoder().encode("%PDF-1.7 sample evidence content");
 
   it("validates evidence files, MIME types, and SHA-256 digests", () => {
+    const validPdf = new TextEncoder().encode("%PDF-1.7 sample evidence content");
+    const validJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00]);
+    const validPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    assert.equal(evidenceMatchesMimeSignature(validPdf, "application/pdf"), true);
+    assert.equal(evidenceMatchesMimeSignature(validJpeg, "image/jpeg"), true);
+    assert.equal(evidenceMatchesMimeSignature(validPng, "image/png"), true);
+    assert.equal(evidenceMatchesMimeSignature(validPdf, "image/png"), false);
+    assert.equal(evidenceMatchesMimeSignature(new Uint8Array([1, 2, 3]), "application/pdf"), false);
+    assert.equal(evidenceMatchesMimeSignature(new Uint8Array(0), "image/jpeg"), false);
+
     assert.equal(MATERIAL_OPTIONS.length >= 8, true);
     assert.equal(isValidMaterialCode(201), true);
     assert.equal(isValidMaterialCode(0), false);
@@ -523,6 +534,14 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
     );
     assert.equal(badMimeRes.ok, false);
     if (!badMimeRes.ok) assert.equal(badMimeRes.code, "INVALID_EVIDENCE");
+
+    const spoofedRes = validateAndPrepareEvidence(
+      CREATED_BATCH_ID,
+      { bytes: new TextEncoder().encode("not a PDF"), mimeType: "application/pdf" },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(spoofedRes.ok, false);
+    if (!spoofedRes.ok) assert.equal(spoofedRes.code, "INVALID_EVIDENCE");
 
     const validRes = validateAndPrepareEvidence(
       CREATED_BATCH_ID,
