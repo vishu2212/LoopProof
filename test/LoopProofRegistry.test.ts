@@ -825,11 +825,11 @@ describe("LoopProofRegistry", function () {
       )
         .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
         .withArgs(ctx.processor.address);
-      // ...and cannot verify a batch it processed where someone else is verifier.
+      // ...and cannot verify a batch it processed where someone else is verifier (reverts with VerifierNotIndependent).
       const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
       await expect(act(ctx, "verify", id, ctx.processor))
-        .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
-        .withArgs(id, ctx.processor.address);
+        .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+        .withArgs(ctx.processor.address);
     });
 
     it("[T-IND-02] collector holding VERIFIER_ROLE cannot verify a batch it collected", async function () {
@@ -844,8 +844,8 @@ describe("LoopProofRegistry", function () {
         .withArgs(ctx.collector.address);
       const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
       await expect(act(ctx, "verify", id, ctx.collector))
-        .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
-        .withArgs(id, ctx.collector.address);
+        .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+        .withArgs(ctx.collector.address);
     });
 
     it("[T-IND-03] the same independence rules apply to return and reject", async function () {
@@ -856,8 +856,8 @@ describe("LoopProofRegistry", function () {
       for (const s of [ctx.processor, ctx.collector]) {
         for (const a of ["return", "reject"] as Action[]) {
           await expect(act(ctx, a, id, s))
-            .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
-            .withArgs(id, s.address);
+            .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+            .withArgs(s.address);
         }
       }
       expect(await ctx.registry.getState(id)).to.equal(State.PROCESSED_CLAIMED);
@@ -1227,6 +1227,331 @@ describe("LoopProofRegistry", function () {
           outs.map((o) => [o.materialCode, o.massGrams]),
         );
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("B11. Adversarial & Security Invariant Hardening", function () {
+    describe("Registrar authorization & cancellation invariants", function () {
+      it("[T-ADV-REG-01] revoking REGISTRAR_ROLE from the batch's registrar prevents cancellation", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "REGISTERED");
+        await ctx.registry.connect(ctx.admin).revokeRole(ctx.role.REGISTRAR, ctx.registrar.address);
+        await expect(ctx.registry.connect(ctx.registrar).cancelBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "AccessControlUnauthorizedAccount")
+          .withArgs(ctx.registrar.address, ctx.role.REGISTRAR);
+        expect(await ctx.registry.getState(id)).to.equal(State.REGISTERED);
+      });
+
+      it("[T-ADV-REG-02] mutual registrar isolation: registrar1 cannot cancel registrar2's batch and vice versa", async function () {
+        const ctx = await load();
+        const key1 = newClaimKey();
+        await ctx.registry
+          .connect(ctx.registrar)
+          .registerBatch(key1, CATEGORY, ctx.collector.address, ctx.processor.address, ctx.verifier.address);
+        const id1 = await ctx.registry.batchIdByClaimKey(key1);
+
+        const key2 = newClaimKey();
+        await ctx.registry
+          .connect(ctx.registrar2)
+          .registerBatch(key2, CATEGORY, ctx.collector.address, ctx.processor.address, ctx.verifier.address);
+        const id2 = await ctx.registry.batchIdByClaimKey(key2);
+
+        // registrar 1 cannot cancel registrar 2's batch
+        await expect(ctx.registry.connect(ctx.registrar).cancelBatch(id2))
+          .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
+          .withArgs(id2, ctx.registrar.address);
+
+        // registrar 2 cannot cancel registrar 1's batch
+        await expect(ctx.registry.connect(ctx.registrar2).cancelBatch(id1))
+          .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
+          .withArgs(id1, ctx.registrar2.address);
+
+        // both remain in REGISTERED state
+        expect(await ctx.registry.getState(id1)).to.equal(State.REGISTERED);
+        expect(await ctx.registry.getState(id2)).to.equal(State.REGISTERED);
+      });
+
+      it("[T-ADV-REG-03] admin granting itself REGISTRAR_ROLE cannot cancel any existing registered batch", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "REGISTERED");
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.REGISTRAR, ctx.admin.address);
+        await expect(ctx.registry.connect(ctx.admin).cancelBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
+          .withArgs(id, ctx.admin.address);
+      });
+
+      it("[T-ADV-REG-04] assigned registrar cannot cancel once collection has occurred", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "COLLECTED");
+        await expect(ctx.registry.connect(ctx.registrar).cancelBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(id, State.COLLECTED, State.CANCELLED);
+      });
+
+      it("[T-ADV-REG-05] claim key of a cancelled batch cannot be re-registered", async function () {
+        const ctx = await load();
+        const key = newClaimKey();
+        await ctx.registry
+          .connect(ctx.registrar)
+          .registerBatch(key, CATEGORY, ctx.collector.address, ctx.processor.address, ctx.verifier.address);
+        const id = await ctx.registry.batchIdByClaimKey(key);
+        await ctx.registry.connect(ctx.registrar).cancelBatch(id);
+
+        await expect(
+          ctx.registry
+            .connect(ctx.registrar)
+            .registerBatch(key, CATEGORY, ctx.collector.address, ctx.processor.address, ctx.verifier.address),
+        )
+          .to.be.revertedWithCustomError(ctx.registry, "DuplicateClaimKey")
+          .withArgs(key);
+      });
+    });
+
+    describe("Verifier independence adversarial enforcement", function () {
+      it("[T-ADV-IND-01] conflicted collector with VERIFIER_ROLE reverts with VerifierNotIndependent at verify", async function () {
+        const ctx = await load();
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.VERIFIER, ctx.collector.address);
+        const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
+        await expect(ctx.registry.connect(ctx.collector).verifyBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.collector.address);
+      });
+
+      it("[T-ADV-IND-02] conflicted processor with VERIFIER_ROLE reverts with VerifierNotIndependent at verify", async function () {
+        const ctx = await load();
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.VERIFIER, ctx.processor.address);
+        const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
+        await expect(ctx.registry.connect(ctx.processor).verifyBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.processor.address);
+      });
+
+      it("[T-ADV-IND-03] conflicted collector or processor cannot return or reject their own batch", async function () {
+        const ctx = await load();
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.VERIFIER, ctx.collector.address);
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.VERIFIER, ctx.processor.address);
+        const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
+
+        await expect(ctx.registry.connect(ctx.collector).returnBatch(id, ReturnReason.INSUFFICIENT_EVIDENCE))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.collector.address);
+        await expect(ctx.registry.connect(ctx.collector).rejectBatch(id, RejectReason.EVIDENCE_INCONSISTENT))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.collector.address);
+
+        await expect(ctx.registry.connect(ctx.processor).returnBatch(id, ReturnReason.INSUFFICIENT_EVIDENCE))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.processor.address);
+        await expect(ctx.registry.connect(ctx.processor).rejectBatch(id, RejectReason.EVIDENCE_INCONSISTENT))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.processor.address);
+      });
+
+      it("[T-ADV-IND-04] third-party non-conflicted verifier reverts with NotAssignedActor (not VerifierNotIndependent)", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "PROCESSED_CLAIMED");
+        await expect(ctx.registry.connect(ctx.verifier2).verifyBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "NotAssignedActor")
+          .withArgs(id, ctx.verifier2.address);
+      });
+
+      it("[T-ADV-IND-05] integrated facility (collector == processor) is blocked from self-verifying", async function () {
+        const ctx = await load();
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.PROCESSOR, ctx.collector.address);
+        await ctx.registry.connect(ctx.admin).grantRole(ctx.role.VERIFIER, ctx.collector.address);
+
+        const key = newClaimKey();
+        await ctx.registry
+          .connect(ctx.registrar)
+          .registerBatch(key, CATEGORY, ctx.collector.address, ctx.collector.address, ctx.verifier.address);
+        const id = await ctx.registry.batchIdByClaimKey(key);
+
+        await ctx.registry.connect(ctx.collector).recordCollection(id, INTAKE, newEvidence("int-col"));
+        await ctx.registry.connect(ctx.collector).recordReceipt(id, newEvidence("int-rec"));
+        await ctx.registry.connect(ctx.collector).submitProcessing(id, OUTPUTS, newEvidence("int-sub"));
+
+        await expect(ctx.registry.connect(ctx.collector).verifyBatch(id))
+          .to.be.revertedWithCustomError(ctx.registry, "VerifierNotIndependent")
+          .withArgs(ctx.collector.address);
+
+        await expect(ctx.registry.connect(ctx.verifier).verifyBatch(id)).to.emit(ctx.registry, "BatchVerified");
+        expect(await ctx.registry.getState(id)).to.equal(State.VERIFIED);
+      });
+    });
+
+    describe("Duplicate evidence digest adversarial attacks", function () {
+      it("[T-ADV-EVD-01] cross-stage digest reuse within the same batch reverts", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "REGISTERED");
+        const h = newEvidence("reused-stage");
+        await ctx.registry.connect(ctx.collector).recordCollection(id, INTAKE, h);
+        await expect(ctx.registry.connect(ctx.processor).recordReceipt(id, h))
+          .to.be.revertedWithCustomError(ctx.registry, "EvidenceAlreadyUsed")
+          .withArgs(h);
+      });
+
+      it("[T-ADV-EVD-02] digest used in terminal batch cannot be reused on a new batch", async function () {
+        const ctx = await load();
+        const id1 = await advanceTo(ctx, "PROCESSED_CLAIMED");
+        const b = await ctx.registry.getBatch(id1);
+        const collectionHash = b.collectionEvidenceHash;
+        await ctx.registry.connect(ctx.verifier).verifyBatch(id1);
+
+        const id2 = await advanceTo(ctx, "REGISTERED");
+        await expect(ctx.registry.connect(ctx.collector).recordCollection(id2, INTAKE, collectionHash))
+          .to.be.revertedWithCustomError(ctx.registry, "EvidenceAlreadyUsed")
+          .withArgs(collectionHash);
+      });
+
+      it("[T-ADV-EVD-03] digest from revision 0 cannot be reused in revision 2 after multiple returns", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const h0 = newEvidence("rev-0");
+        await ctx.registry.connect(ctx.processor).submitProcessing(id, OUTPUTS, h0);
+        await ctx.registry.connect(ctx.verifier).returnBatch(id, ReturnReason.INSUFFICIENT_EVIDENCE);
+
+        const h1 = newEvidence("rev-1");
+        await ctx.registry.connect(ctx.processor).resubmitProcessing(id, OUTPUTS_V2, h1);
+        await ctx.registry.connect(ctx.verifier).returnBatch(id, ReturnReason.OUTPUT_DATA_INCOMPLETE);
+
+        await expect(ctx.registry.connect(ctx.processor).resubmitProcessing(id, OUTPUTS, h0))
+          .to.be.revertedWithCustomError(ctx.registry, "EvidenceAlreadyUsed")
+          .withArgs(h0);
+      });
+
+      it("[T-ADV-EVD-04] bytes32(0) is rejected across all evidence entry points", async function () {
+        const ctx = await load();
+        const idReg = await advanceTo(ctx, "REGISTERED");
+        await expect(ctx.registry.connect(ctx.collector).recordCollection(idReg, INTAKE, ZERO_HASH))
+          .to.be.revertedWithCustomError(ctx.registry, "MissingEvidence");
+
+        const idCol = await advanceTo(ctx, "COLLECTED");
+        await expect(ctx.registry.connect(ctx.processor).recordReceipt(idCol, ZERO_HASH))
+          .to.be.revertedWithCustomError(ctx.registry, "MissingEvidence");
+
+        const idRec = await advanceTo(ctx, "RECEIVED");
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(idRec, OUTPUTS, ZERO_HASH))
+          .to.be.revertedWithCustomError(ctx.registry, "MissingEvidence");
+
+        const idRet = await advanceTo(ctx, "RETURNED");
+        await expect(ctx.registry.connect(ctx.processor).resubmitProcessing(idRet, OUTPUTS_V2, ZERO_HASH))
+          .to.be.revertedWithCustomError(ctx.registry, "MissingEvidence");
+      });
+    });
+
+    describe("Invalid state transition & immutability adversarial attacks", function () {
+      it("[T-ADV-TR-01] skipping stages from REGISTERED directly to later states reverts", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "REGISTERED");
+        await expect(act(ctx, "receipt", id))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(id, State.REGISTERED, State.RECEIVED);
+        await expect(act(ctx, "submit", id))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(id, State.REGISTERED, State.PROCESSED_CLAIMED);
+        await expect(act(ctx, "verify", id))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(id, State.REGISTERED, State.VERIFIED);
+      });
+
+      it("[T-ADV-TR-02] premature verification before processing claim reverts", async function () {
+        const ctx = await load();
+        const idCol = await advanceTo(ctx, "COLLECTED");
+        await expect(act(ctx, "verify", idCol))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(idCol, State.COLLECTED, State.VERIFIED);
+
+        const idRec = await advanceTo(ctx, "RECEIVED");
+        await expect(act(ctx, "verify", idRec))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(idRec, State.RECEIVED, State.VERIFIED);
+      });
+
+      it("[T-ADV-TR-03] backward transitions are strictly forbidden", async function () {
+        const ctx = await load();
+        const idRec = await advanceTo(ctx, "RECEIVED");
+        await expect(act(ctx, "collect", idRec))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(idRec, State.RECEIVED, State.COLLECTED);
+
+        const idClaim = await advanceTo(ctx, "PROCESSED_CLAIMED");
+        await expect(act(ctx, "receipt", idClaim))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+          .withArgs(idClaim, State.PROCESSED_CLAIMED, State.RECEIVED);
+      });
+
+      it("[T-ADV-TR-04] terminal states VERIFIED, REJECTED, CANCELLED accept no mutations", async function () {
+        const ctx = await load();
+        const idVer = await advanceTo(ctx, "VERIFIED");
+        const idRej = await advanceTo(ctx, "REJECTED");
+        const idCan = await advanceTo(ctx, "CANCELLED");
+
+        for (const [id, st] of [
+          [idVer, State.VERIFIED],
+          [idRej, State.REJECTED],
+          [idCan, State.CANCELLED],
+        ] as const) {
+          await expect(act(ctx, "collect", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          await expect(act(ctx, "receipt", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          await expect(act(ctx, "submit", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          await expect(act(ctx, "verify", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          await expect(act(ctx, "cancel", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          expect(await ctx.registry.getState(id)).to.equal(st);
+        }
+      });
+    });
+
+    describe("Mass-balance constraint adversarial bounds", function () {
+      it("[T-ADV-MASS-01] output summing to intake + 1 gram reverts with MassBalanceExceeded", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const excessOutputs = [out(1, INTAKE / 2n), out(2, INTAKE / 2n + 1n)];
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, excessOutputs, newEvidence()))
+          .to.be.revertedWithCustomError(ctx.registry, "MassBalanceExceeded")
+          .withArgs(INTAKE + 1n, INTAKE);
+      });
+
+      it("[T-ADV-MASS-02] 17 outputs exceeds MAX_OUTPUTS and reverts with TooManyOutputs", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const seventeen = Array.from({ length: 17 }, (_, i) => out(i + 1, 10n));
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, seventeen, newEvidence()))
+          .to.be.revertedWithCustomError(ctx.registry, "TooManyOutputs")
+          .withArgs(17, 16);
+      });
+
+      it("[T-ADV-MASS-03] zero mass or zero material code at any position reverts with InvalidOutput", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const badMaterial = [out(1, 100n), { materialCode: 0, massGrams: 50n }];
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, badMaterial, newEvidence()))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidOutput")
+          .withArgs(1);
+
+        const badMass = [{ materialCode: 1, massGrams: 0n }];
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, badMass, newEvidence()))
+          .to.be.revertedWithCustomError(ctx.registry, "InvalidOutput")
+          .withArgs(0);
+      });
+
+      it("[T-ADV-MASS-04] exact mass conservation (sum == intake) succeeds", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const balanced = [out(1, INTAKE / 2n), out(2, INTAKE / 2n)];
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, balanced, newEvidence()))
+          .to.emit(ctx.registry, "ProcessingSubmitted");
+        expect(await ctx.registry.getState(id)).to.equal(State.PROCESSED_CLAIMED);
+      });
+
+      it("[T-ADV-MASS-05] sub-intake mass claim (sum < intake) succeeds representing physical loss", async function () {
+        const ctx = await load();
+        const id = await advanceTo(ctx, "RECEIVED");
+        const lossOutputs = [out(1, INTAKE / 3n)];
+        await expect(ctx.registry.connect(ctx.processor).submitProcessing(id, lossOutputs, newEvidence()))
+          .to.emit(ctx.registry, "ProcessingSubmitted");
+        expect(await ctx.registry.getState(id)).to.equal(State.PROCESSED_CLAIMED);
+      });
     });
   });
 });

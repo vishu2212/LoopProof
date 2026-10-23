@@ -359,9 +359,10 @@ contract LoopProofRegistry is AccessControl {
 
     function _verifierPreconditions(uint256 batchId, BatchState attempted) private view returns (Batch storage b) {
         b = _existing(batchId);
-        _requireAssigned(batchId, b.verifier);
-        // Defense in depth: independence is also enforced at registration.
+        // Defense in depth: verifier must be independent of collector and processor.
+        // Checked before assignment check so conflicted participants revert with VerifierNotIndependent.
         if (msg.sender == b.collector || msg.sender == b.processor) revert VerifierNotIndependent(msg.sender);
+        _requireAssigned(batchId, b.verifier);
         _requireState(batchId, b, BatchState.PROCESSED_CLAIMED, attempted);
     }
 
