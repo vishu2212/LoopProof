@@ -7,7 +7,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "LoopProof — E-Waste Traceability Prototype", template: "%s · LoopProof Demo" },
   description:
-    "LoopProof e-waste traceability interface prototype. Synthetic demo data; not connected to a backend, database, or blockchain.",
+    "Evidence-gated e-waste traceability ledger with synthetic demo fixtures and a connected Supabase live registry.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
