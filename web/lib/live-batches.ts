@@ -326,7 +326,11 @@ export type SupabaseLikeClient = {
       upload(
         path: string,
         body: Uint8Array | Buffer | ArrayBuffer | Blob,
-        options?: { contentType?: string; upsert?: boolean },
+        options?: {
+          contentType?: string;
+          upsert?: boolean;
+          metadata?: Record<string, any>;
+        },
       ): Promise<{
         data: { path?: string } | null;
         error: { message?: string; statusCode?: string } | null;
@@ -991,6 +995,9 @@ export async function recordCollectionWithRpc(
     .upload(prepared.storagePath, input.evidence.bytes, {
       contentType: prepared.mimeType,
       upsert: false,
+      metadata: {
+        sha256: prepared.sha256Hex.replace(/^\\x/, ""),
+      },
     });
 
   if (uploadError) {
@@ -1124,6 +1131,9 @@ export async function recordReceiptWithRpc(
     .upload(prepared.storagePath, input.evidence.bytes, {
       contentType: prepared.mimeType,
       upsert: false,
+      metadata: {
+        sha256: prepared.sha256Hex.replace(/^\\x/, ""),
+      },
     });
 
   if (uploadError) {
@@ -1268,6 +1278,9 @@ export async function submitProcessingWithRpc(
     .upload(prepared.storagePath, input.evidence.bytes, {
       contentType: prepared.mimeType,
       upsert: false,
+      metadata: {
+        sha256: prepared.sha256Hex.replace(/^\\x/, ""),
+      },
     });
 
   if (uploadError) {
