@@ -27,8 +27,8 @@ Unlike legacy circularity portals that award carbon credits or green badges upon
 - **Multi-Stakeholder Supply Chain**: Heterogeneous actors across waste collection hubs, sorting facilities, specialized metallurgical recyclers, and independent auditing firms.
 - **High-Stakes Compliance**: Used during corporate ESG audits, ISO 14001 certification, and WEEE directive compliance reviews where false claims carry legal and reputational penalties.
 - **Dual-Track Implementation**:
-  - **Live Web Registry**: Built with Next.js and Supabase. Evidence files (PDFs, weighbridge tickets, assay reports) are stored in private Supabase Storage, with 32-byte SHA-256 digests recorded in PostgreSQL for file integrity. The live Supabase registry is not claimed to be anchored to a public blockchain.
-  - **Solidity Smart Contract Reference Engine**: `contracts/LoopProofRegistry.sol` implements the protocol finite state machine with role-based access, mass-balance validation, and typed reason codes, tested locally on Hardhat EVM (`chainId 31337`) across 162 automated tests.
+  - **Live Web Registry**: Built with Next.js and Supabase. Evidence files (PDFs, weighbridge tickets, assay reports) are stored in private Supabase Storage. The Next.js application computes a 32-byte SHA-256 digest from the uploaded file bytes, PostgreSQL records it, and the database checks digest metadata consistency against Storage object metadata. Because Storage object metadata is caller-supplied and authenticated lifecycle RPCs are directly callable via PostgREST, this enforces metadata consistency rather than an independent end-to-end byte-integrity guarantee. The live Supabase registry is not claimed to be anchored to a public blockchain.
+  - **Solidity Smart Contract Reference Engine**: `contracts/LoopProofRegistry.sol` implements the protocol finite state machine with role-based access, mass-balance validation, and typed reason codes, tested locally on Hardhat EVM (`chainId 31337`) across 188 automated tests.
 
 ## Capabilities and Constraints
 
@@ -49,14 +49,14 @@ Unlike legacy circularity portals that award carbon credits or green badges upon
 
 - Canonical synthetic demo fixtures: `DEMO-001` through `DEMO-007` covering every lifecycle state and transition branch.
 - Validated mass balance metrics: 50.6 kg total registered intake mass, 24.5 kg in-transit/received, 10.0 kg pending claim review, 8.8 kg independently verified.
-- Smart contract reference engine in `contracts/LoopProofRegistry.sol` verified locally by 162 unit tests on Hardhat EVM (`chainId 31337`).
+- Smart contract reference engine in `contracts/LoopProofRegistry.sol` verified locally by 188 unit and adversarial tests on Hardhat EVM (`chainId 31337`).
 - Supabase SQL core schema migration with RLS policies, trigger guards, and `SECURITY DEFINER` RPCs.
 - Live web application deployed on Vercel with route-aware context disclosures.
 
 ## Product Principles
 
 1. **Collected does not mean recycled**: Pickup certificates prove location handover, not physical recycling.
-2. **Hashes prove payload immutability, not process truth**: Cryptographic SHA-256 digests ensure files were not tampered with, but independent verifier checks are required to corroborate physical truth.
+2. **Hashes record digest declarations, not independent byte proof or process truth**: The application computes a SHA-256 digest from uploaded bytes and the database enforces Storage metadata consistency. Because authenticated clients can supply Storage metadata and call lifecycle RPCs directly, this is not yet an independent end-to-end byte-integrity guarantee. Furthermore, no cryptographic hash can prove the physical truth or genuineness of off-chain recycling processes, which requires independent verifier corroboration.
 3. **Strict impact gating**: No environmental impact numbers, avoided emissions, or carbon offsets are displayed before independent verification.
 4. **Transparent custody & accountability**: Every state change records the actor identifier, timestamp, evidence digest, and immutable reason codes. The live registry stores these in PostgreSQL under Row Level Security, while the smart contract demonstrates protocol enforcement on EVM.
 

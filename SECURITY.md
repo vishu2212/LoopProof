@@ -3,8 +3,8 @@
 ## Scope & Prototype Classification
 
 LoopProof is a hackathon prototype designed for the IEEE ClimateChain Global Hackathon 2026 (Sustainable Supply Chains track). It has been tested with automated test suites across both tracks of its dual-track architecture:
-- **Web & Database Track:** Next.js 16 + Supabase PostgreSQL RLS + Private Storage (57 passing schema & integration tests).
-- **Protocol Reference Track:** Solidity 0.8.28 reference smart contract suite on local Hardhat EVM (185 passing unit and adversarial tests).
+- **Web & Database Track:** Next.js 16 + Supabase PostgreSQL RLS + Private Storage (57 passing web tests, 53 passing local database pgTAP tests).
+- **Protocol Reference Track:** Solidity 0.8.28 reference smart contract suite on local Hardhat EVM (188 passing unit and adversarial tests).
 
 A successful test suite does not establish that the application or its smart contracts are free of vulnerabilities, nor has the repository undergone a formal independent third-party audit.
 
@@ -30,12 +30,13 @@ LoopProof maintains a strict separation between its two distinct execution envir
    - The production demo application (`https://loop-proof.vercel.app/`) executes against Supabase PostgreSQL and private Supabase Storage (`evidence` bucket).
    - Authorization is enforced by PostgreSQL Row Level Security (RLS) policies scoped by `auth.uid()`, trigger-guarded state machines, append-only event logs, and `SECURITY DEFINER` functions with fixed empty search paths (`search_path = ''`).
    - Server Actions enforce client pre-buffering (20 MB bound), magic-byte MIME type validation (PDF, JPEG, PNG only), and server-calculated SHA-256 digests.
+   - **Evidence Integrity & Threat Boundary:** In the live web workflow, Next.js Server Actions buffer evidence files in memory, compute a 32-byte SHA-256 digest, upload the file with digest metadata, and pass the digest to PostgreSQL lifecycle RPCs. Database triggers and functions verify that the declared digest, file size, MIME type, and batch folder match `storage.objects` metadata and that the caller is the recorded object uploader. However, because Supabase Storage allows authenticated uploaders to provide custom `user_metadata`, and because PostgREST currently exposes lifecycle RPCs directly to `authenticated` users, the database enforces *Storage metadata consistency* rather than an independent end-to-end proof of binary file-byte integrity. An authenticated user calling the PostgREST API directly could upload arbitrary file bytes with matching metadata.
    - **Operational Boundary:** The live registry is backed by PostgreSQL; it is **not** anchored to, synced with, or recorded on any public blockchain.
 
 2. **Protocol Reference Track (Solidity 0.8.28 on Local Hardhat EVM):**
    - The smart contract suite (`contracts/LoopProofRegistry.sol`, `contracts/LoopProofTypes.sol`) serves as a formal on-chain reference implementation of the lifecycle finite state machine.
-   - It is tested and verified locally on the simulated Hardhat EVM network (`chainId 31337`).
-   - **Operational Boundary:** The smart contracts are **not deployed to any public testnet or mainnet**.
+   - It is tested and verified locally on the simulated Hardhat EVM network (`chainId 31337`) across 188 passing automated test cases.
+   - **Operational Boundary:** The smart contracts are **not deployed to any public testnet or mainnet**. The Solidity contract records 32-byte evidence digests submitted by authorized callers, enforces global uniqueness (`evidenceUsed` mapping), and rejects zero-hashes, but has no direct access to off-chain binary files.
 
 ---
 
@@ -85,9 +86,9 @@ LoopProof maintains a strict separation between its two distinct execution envir
 
 | Property | Demonstrates | Does NOT Demonstrate |
 | :--- | :--- | :--- |
-| **Cryptographic Evidence Digest** | Proves byte-level correspondence to an off-chain document at anchoring time. | Does not prove the document is truthful, accurate, or physically genuine. |
-| **State Machine Transitions** | Proves authorized private keys recorded lifecycle events in accordance with protocol rules. | Does not prove physical movement, receipt, or recycling occurred in the real world. |
-| **Verifier Independence** | Proves verifying Ethereum key differs from collector and processor Ethereum keys. | Does not prove off-chain corporate entities are economically or legally independent. |
+| **Cryptographic Evidence Digest** | Confirms declared RPC arguments match uploaded Storage object metadata (live registry); enforces digest uniqueness and replay prevention on-chain (reference contract). | Does not independently re-hash binary bytes from object storage inside PostgreSQL; does not prevent an authenticated direct API caller from providing matching metadata for arbitrary bytes; does not prove the off-chain document is truthful, accurate, or physically genuine. |
+| **State Machine Transitions** | Proves authorized private keys (contracts) or authenticated accounts (PostgreSQL) recorded lifecycle events in accordance with protocol rules. | Does not prove physical movement, receipt, or recycling occurred in the real world. |
+| **Verifier Independence** | Proves verifying key/identity differs from collector and processor keys/identities. | Does not prove off-chain corporate entities are economically or legally independent. |
 | **Conservation of Mass** | Enforces that reported mathematical sums do not exceed intake mass on record. | Does not prevent fraudulent scale readings or misreported intake weights. |
 | **Environmental Impact Gating** | Prevents premature display of impact metrics until verified and supported by cited factors. | Does not guarantee that verified recycled material yields net carbon reduction without life-cycle analysis. |
 
@@ -96,5 +97,6 @@ LoopProof maintains a strict separation between its two distinct execution envir
 ## Known Assumptions & Limitations
 
 - **Administrative Key Custody:** `DEFAULT_ADMIN_ROLE` can grant lifecycle roles to colluding accounts to create and advance *new* batches, or revoke roles to stall pending batches. Admin key security is a fundamental operational assumption.
+- **Evidence Storage & Byte-Integrity Boundary (Live Registry):** In the current live deployment, PostgreSQL validates Storage metadata consistency (`size`, `mimetype`, `user_metadata->>'sha256'`) and uploader ownership; it does not compute the digest directly from raw object storage bytes. Because lifecycle RPCs permit direct PostgREST calls by `authenticated` users, true end-to-end byte integrity relies on the Next.js Server Action execution path. Full database-level enforcement would require restricting lifecycle RPC execution to `service_role`.
 - **Single Intake Reading:** Intake mass is recorded once at collection; processor receipt does not record a separate tare/gross scale reading.
 - **Synthetic Fixtures:** Dashboard fixtures (`DEMO-NNN`) are synthetic demonstrative examples. They must never be represented as real-world recycling evidence.

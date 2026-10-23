@@ -115,5 +115,5 @@ npm run build --prefix web
 
 - **Solidity Smart Contracts**: Deployed on local Hardhat EVM (chainId 31337) for reproducible protocol testing (188 passing unit and adversarial tests). Not deployed on public Ethereum mainnet.
 - **Live Registry**: Backed by PostgreSQL on Supabase with Row Level Security, custom RPC state transitions, and private S3-compatible storage. Not anchored to public blockchain blocks.
-- **Cryptographic Hashes**: SHA-256 digests prove byte-level integrity against post-upload tampering; they do not attest to real-world material truth or recycling claims without independent auditing.
+- **Cryptographic Hashes**: In the live registry, SHA-256 digests record declared evidence hashes and verify Storage metadata consistency; they do not independently prove off-chain material truth or physical recycling outcomes.
 - **Synthetic Demo Data**: Routes `/` and `/batches/*` display clearly labeled canonical synthetic fixtures for demonstrative UI review.
