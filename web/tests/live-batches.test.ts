@@ -32,6 +32,7 @@ import {
   recordReceiptWithRpc,
   registerBatchWithRpc,
   resolveBatchLifecycleAccess,
+  safeCleanupOrphanStorageObject,
   shouldDisplayLiveOutcomeBanner,
   submitProcessingWithRpc,
   submitVerifierDecisionFormData,
@@ -60,6 +61,7 @@ interface MockClientOptions {
   rolesError?: { message: string; code?: string } | null;
   storageError?: { message: string; statusCode?: string } | null;
   onUpload?: (bucket: string, path: string, contentType?: string) => void;
+  onRemove?: (bucket: string, paths: string[]) => void;
   rpcResult?: string | null;
   rpcError?: { message: string; code?: string; details?: string } | null;
   onRpc?: (fn: string, args: Record<string, unknown>) => void;
@@ -96,6 +98,10 @@ function createMockSupabaseClient(options: MockClientOptions): SupabaseLikeClien
               return { data: null, error: options.storageError };
             }
             return { data: { path }, error: null };
+          },
+          async remove(paths: string[]) {
+            options.onRemove?.(bucket, paths);
+            return { data: paths, error: null };
           },
         };
       },
@@ -1451,6 +1457,155 @@ describe("Lifecycle RPC helpers: Collector, Processor, Verifier, and Registrar",
       fixedStoragePath,
     );
     assert.equal(directMismatchState, null);
+  });
+
+  it("Trusted Evidence Gateway: routes to lp_gateway_* with actor attribution when adminClient is provided, and safely cleans orphan uploads on failure", async () => {
+    let gatewayFn = "";
+    let gatewayArgs: Record<string, unknown> = {};
+    let removedBucket = "";
+    let removedPaths: string[] = [];
+
+    const adminClient = createMockSupabaseClient({
+      user: null, // Service role client carries no user JWT
+      onRpc: (fn, args) => {
+        gatewayFn = fn;
+        gatewayArgs = args;
+      },
+      onRemove: (bucket, paths) => {
+        removedBucket = bucket;
+        removedPaths = paths;
+      },
+    });
+
+    const collectorUserClient = createMockSupabaseClient({
+      user: { id: VALID_COLLECTOR_ID, email: "collector@example.org" },
+      roles: ["collector"],
+    });
+
+    // 1. Record collection with adminClient routes to lp_gateway_record_collection
+    const colRes = await recordCollectionWithRpc(
+      collectorUserClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        intakeMassGrams: 10000,
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "REGISTERED" }),
+        adminClient,
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(colRes.ok, true);
+    assert.equal(gatewayFn, "lp_gateway_record_collection");
+    assert.equal(gatewayArgs.p_actor_id, VALID_COLLECTOR_ID);
+    assert.equal(gatewayArgs.p_batch_id, CREATED_BATCH_ID);
+    assert.equal(gatewayArgs.p_intake_mass_grams, 10000);
+
+    // 2. Record receipt with adminClient routes to lp_gateway_record_receipt
+    const processorUserClient = createMockSupabaseClient({
+      user: { id: VALID_PROCESSOR_ID, email: "processor@example.org" },
+      roles: ["processor"],
+    });
+
+    const receiptRes = await recordReceiptWithRpc(
+      processorUserClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "COLLECTED" }),
+        adminClient,
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(receiptRes.ok, true);
+    assert.equal(gatewayFn, "lp_gateway_record_receipt");
+    assert.equal(gatewayArgs.p_actor_id, VALID_PROCESSOR_ID);
+
+    // 3. Submit processing with adminClient routes to lp_gateway_submit_processing
+    const submitRes = await submitProcessingWithRpc(
+      processorUserClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        mode: "submit",
+        intakeMassGrams: 10000,
+        outputs: [{ material_code: 101, mass_grams: 8000 }],
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "RECEIVED", intake_mass_grams: 10000 }),
+        adminClient,
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(submitRes.ok, true);
+    assert.equal(gatewayFn, "lp_gateway_submit_processing");
+    assert.equal(gatewayArgs.p_actor_id, VALID_PROCESSOR_ID);
+
+    // 4. Resubmit processing with adminClient routes to lp_gateway_resubmit_processing
+    const resubmitRes = await submitProcessingWithRpc(
+      processorUserClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        mode: "resubmit",
+        intakeMassGrams: 10000,
+        outputs: [{ material_code: 101, mass_grams: 8000 }],
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "RETURNED", intake_mass_grams: 10000 }),
+        adminClient,
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(resubmitRes.ok, true);
+    assert.equal(gatewayFn, "lp_gateway_resubmit_processing");
+    assert.equal(gatewayArgs.p_actor_id, VALID_PROCESSOR_ID);
+
+    // 5. Safe orphan cleanup: when gateway RPC fails and evidence is uncommitted, cleans up object
+    const failingAdminClient = createMockSupabaseClient({
+      rpcError: { message: "total outputs exceed intake mass" },
+      onRemove: (bucket, paths) => {
+        removedBucket = bucket;
+        removedPaths = paths;
+      },
+    });
+
+    const failedSubmit = await submitProcessingWithRpc(
+      processorUserClient,
+      {
+        batchId: CREATED_BATCH_ID,
+        mode: "submit",
+        intakeMassGrams: 10000,
+        outputs: [{ material_code: 101, mass_grams: 8000 }],
+        evidence: { bytes: samplePdfBytes, mimeType: "application/pdf" },
+        batch: makeBatchContext({ state: "RECEIVED", intake_mass_grams: 10000 }),
+        adminClient: failingAdminClient,
+      },
+      () => FIXED_OBJECT_ID,
+    );
+    assert.equal(failedSubmit.ok, false);
+    if (!failedSubmit.ok) {
+      assert.equal(failedSubmit.code, "RPC_ERROR");
+    }
+    assert.equal(removedBucket, "evidence");
+    assert.deepEqual(removedPaths, [`${CREATED_BATCH_ID}/${FIXED_OBJECT_ID}`]);
+
+    // 6. Safe orphan cleanup guard: never deletes an object that was already registered in public.evidence
+    let guardRemoveCalled = false;
+    const evidenceCommittedClient = createMockSupabaseClient({
+      mockEvidence: [
+        {
+          id: "ev-already-registered",
+          batch_id: CREATED_BATCH_ID,
+          sha256: "0x123",
+          storage_path: `${CREATED_BATCH_ID}/committed-file.pdf`,
+        },
+      ],
+      onRemove: () => {
+        guardRemoveCalled = true;
+      },
+    });
+
+    await safeCleanupOrphanStorageObject(
+      evidenceCommittedClient,
+      `${CREATED_BATCH_ID}/committed-file.pdf`,
+    );
+    assert.equal(guardRemoveCalled, false, "Committed evidence storage object must never be removed");
   });
 });
 

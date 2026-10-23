@@ -18,7 +18,10 @@ import {
   type EvidenceUploadInput,
   type ProcessingOutputInput,
 } from "@/lib/live-batches";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import {
+  createSupabaseAdminClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase-server";
 
 export type RegisterFormState = {
   status: "idle" | "success" | "error";
@@ -223,11 +226,24 @@ export async function recordCollectionAction(
     };
   }
 
+  let adminClient: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    adminClient = createSupabaseAdminClient();
+  } catch (err) {
+    return {
+      status: "error",
+      code: "GATEWAY_UNAVAILABLE",
+      message:
+        "Trusted Evidence Gateway is unavailable (service role unconfigured). Failing closed.",
+    };
+  }
+
   const result = await recordCollectionWithRpc(supabase, {
     batchId,
     intakeMassGrams,
     evidence: fileRes.evidence,
     batch: batchCtx,
+    adminClient,
   });
 
   if (!result.ok) {
@@ -242,8 +258,7 @@ export async function recordCollectionAction(
   return {
     status: "success",
     nextState: result.nextState,
-    message:
-      "Collection recorded via public.lp_record_collection. Batch transitioned REGISTERED → COLLECTED.",
+    message: `Collection recorded via public.lp_gateway_record_collection. Batch transitioned REGISTERED → COLLECTED.`,
   };
 }
 
@@ -298,10 +313,23 @@ export async function recordReceiptAction(
     };
   }
 
+  let adminClient: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    adminClient = createSupabaseAdminClient();
+  } catch (err) {
+    return {
+      status: "error",
+      code: "GATEWAY_UNAVAILABLE",
+      message:
+        "Trusted Evidence Gateway is unavailable (service role unconfigured). Failing closed.",
+    };
+  }
+
   const result = await recordReceiptWithRpc(supabase, {
     batchId,
     evidence: fileRes.evidence,
     batch: batchCtx,
+    adminClient,
   });
 
   if (!result.ok) {
@@ -316,8 +344,7 @@ export async function recordReceiptAction(
   return {
     status: "success",
     nextState: result.nextState,
-    message:
-      "Facility receipt recorded via public.lp_record_receipt. Batch transitioned COLLECTED → RECEIVED.",
+    message: `Facility receipt recorded via public.lp_gateway_record_receipt. Batch transitioned COLLECTED → RECEIVED.`,
   };
 }
 
@@ -409,6 +436,18 @@ export async function submitProcessingAction(
     };
   }
 
+  let adminClient: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    adminClient = createSupabaseAdminClient();
+  } catch (err) {
+    return {
+      status: "error",
+      code: "GATEWAY_UNAVAILABLE",
+      message:
+        "Trusted Evidence Gateway is unavailable (service role unconfigured). Failing closed.",
+    };
+  }
+
   const result = await submitProcessingWithRpc(supabase, {
     batchId,
     mode,
@@ -416,6 +455,7 @@ export async function submitProcessingAction(
     outputs,
     evidence: fileRes.evidence,
     batch: batchCtx,
+    adminClient,
   });
 
   if (!result.ok) {
@@ -428,7 +468,9 @@ export async function submitProcessingAction(
 
   revalidateLiveBatchRoutes(result.batchId, batchCtx?.public_ref);
   const rpcLabel =
-    mode === "resubmit" ? "public.lp_resubmit_processing" : "public.lp_submit_processing";
+    mode === "resubmit"
+      ? "public.lp_gateway_resubmit_processing"
+      : "public.lp_gateway_submit_processing";
   return {
     status: "success",
     nextState: result.nextState,

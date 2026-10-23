@@ -1,0 +1,27 @@
+-- =============================================================================
+-- LoopProof forward-only migration: Revoke Legacy Evidence RPCs (Phase 3 Cutover)
+-- =============================================================================
+-- Revokes public, anon, and authenticated execution grants from legacy lifecycle
+-- evidence RPCs. All evidence-bearing state transitions must now flow exclusively
+-- through the trusted server-side gateway (lp_gateway_*).
+--
+-- CAUTION:
+-- Do not apply this migration until the updated Next.js application has been
+-- deployed and all live user sessions have migrated to Server Action gateway paths.
+-- =============================================================================
+
+revoke all on function public.lp_record_collection(
+  uuid, bigint, bytea, text, bigint, text
+) from public, anon, authenticated;
+
+revoke all on function public.lp_record_receipt(
+  uuid, bytea, text, bigint, text
+) from public, anon, authenticated;
+
+revoke all on function public.lp_submit_processing(
+  uuid, jsonb, bytea, text, bigint, text
+) from public, anon, authenticated;
+
+revoke all on function public.lp_resubmit_processing(
+  uuid, jsonb, bytea, text, bigint, text
+) from public, anon, authenticated;

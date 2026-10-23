@@ -335,6 +335,10 @@ export type SupabaseLikeClient = {
         data: { path?: string } | null;
         error: { message?: string; statusCode?: string } | null;
       }>;
+      remove?(paths: string[]): Promise<{
+        data: unknown;
+        error: { message?: string } | null;
+      }>;
     };
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -907,11 +911,44 @@ export async function reconcileEvidenceState(
   }
 }
 
+/**
+ * Safely removes an uncommitted orphan evidence object from the private Storage bucket
+ * after an RPC failure or rollback.
+ *
+ * Verifies that the storage path was never registered in `public.evidence` before deleting.
+ * Because each upload generates a unique UUID storage path (`<batchId>/<objectId>`), this cannot
+ * delete objects from concurrent uploads or previously committed operations.
+ */
+export async function safeCleanupOrphanStorageObject(
+  client: SupabaseLikeClient,
+  storagePath: string,
+): Promise<void> {
+  try {
+    const { data: existingEvidence, error: evidenceErr } = await client
+      .from("evidence")
+      .select("id")
+      .eq("storage_path", storagePath)
+      .maybeSingle();
+
+    if (evidenceErr || (existingEvidence && existingEvidence.id)) {
+      return;
+    }
+
+    const storageBucket = client.storage?.from("evidence");
+    if (storageBucket && typeof storageBucket.remove === "function") {
+      await storageBucket.remove([storagePath]);
+    }
+  } catch {
+    // Best-effort cleanup must never throw or conceal the root mutation error.
+  }
+}
+
 export type RecordCollectionInput = {
   batchId: string;
   intakeMassGrams: number;
   evidence: EvidenceUploadInput;
   batch?: BatchContextForValidation;
+  adminClient?: SupabaseLikeClient;
 };
 
 /**
@@ -1018,14 +1055,28 @@ export async function recordCollectionWithRpc(
     };
   }
 
-  const { error: rpcError } = await client.rpc("lp_record_collection", {
-    p_batch_id: normalizedBatchId,
-    p_intake_mass_grams: intakeMassGrams,
-    p_sha256: prepared.sha256Hex,
-    p_storage_path: prepared.storagePath,
-    p_byte_size: prepared.byteSize,
-    p_mime_type: prepared.mimeType,
-  });
+  const rpcTarget = input.adminClient ?? client;
+  const rpcName = input.adminClient ? "lp_gateway_record_collection" : "lp_record_collection";
+  const rpcArgs = input.adminClient
+    ? {
+        p_actor_id: session.user.id,
+        p_batch_id: normalizedBatchId,
+        p_intake_mass_grams: intakeMassGrams,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      }
+    : {
+        p_batch_id: normalizedBatchId,
+        p_intake_mass_grams: intakeMassGrams,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      };
+
+  const { error: rpcError } = await rpcTarget.rpc(rpcName, rpcArgs);
 
   if (rpcError) {
     const reconciled = await reconcileEvidenceState(
@@ -1038,6 +1089,7 @@ export async function recordCollectionWithRpc(
     if (reconciled) {
       return reconciled;
     }
+    await safeCleanupOrphanStorageObject(input.adminClient ?? client, prepared.storagePath);
     return {
       ok: false,
       code: "RPC_ERROR",
@@ -1058,6 +1110,7 @@ export type RecordReceiptInput = {
   batchId: string;
   evidence: EvidenceUploadInput;
   batch?: BatchContextForValidation;
+  adminClient?: SupabaseLikeClient;
 };
 
 /**
@@ -1154,13 +1207,26 @@ export async function recordReceiptWithRpc(
     };
   }
 
-  const { error: rpcError } = await client.rpc("lp_record_receipt", {
-    p_batch_id: normalizedBatchId,
-    p_sha256: prepared.sha256Hex,
-    p_storage_path: prepared.storagePath,
-    p_byte_size: prepared.byteSize,
-    p_mime_type: prepared.mimeType,
-  });
+  const rpcTarget = input.adminClient ?? client;
+  const rpcName = input.adminClient ? "lp_gateway_record_receipt" : "lp_record_receipt";
+  const rpcArgs = input.adminClient
+    ? {
+        p_actor_id: session.user.id,
+        p_batch_id: normalizedBatchId,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      }
+    : {
+        p_batch_id: normalizedBatchId,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      };
+
+  const { error: rpcError } = await rpcTarget.rpc(rpcName, rpcArgs);
 
   if (rpcError) {
     const reconciled = await reconcileEvidenceState(
@@ -1173,6 +1239,7 @@ export async function recordReceiptWithRpc(
     if (reconciled) {
       return reconciled;
     }
+    await safeCleanupOrphanStorageObject(input.adminClient ?? client, prepared.storagePath);
     return {
       ok: false,
       code: "RPC_ERROR",
@@ -1196,6 +1263,7 @@ export type SubmitProcessingInput = {
   outputs: ProcessingOutputInput[];
   evidence: EvidenceUploadInput;
   batch?: BatchContextForValidation;
+  adminClient?: SupabaseLikeClient;
 };
 
 /**
@@ -1302,16 +1370,35 @@ export async function submitProcessingWithRpc(
     };
   }
 
-  const rpcName =
-    input.mode === "resubmit" ? "lp_resubmit_processing" : "lp_submit_processing";
-  const { error: rpcError } = await client.rpc(rpcName, {
-    p_batch_id: normalizedBatchId,
-    p_outputs: outputsCheck.normalizedOutputs,
-    p_sha256: prepared.sha256Hex,
-    p_storage_path: prepared.storagePath,
-    p_byte_size: prepared.byteSize,
-    p_mime_type: prepared.mimeType,
-  });
+  const rpcTarget = input.adminClient ?? client;
+  const rpcName = input.adminClient
+    ? input.mode === "resubmit"
+      ? "lp_gateway_resubmit_processing"
+      : "lp_gateway_submit_processing"
+    : input.mode === "resubmit"
+      ? "lp_resubmit_processing"
+      : "lp_submit_processing";
+
+  const rpcArgs = input.adminClient
+    ? {
+        p_actor_id: session.user.id,
+        p_batch_id: normalizedBatchId,
+        p_outputs: outputsCheck.normalizedOutputs,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      }
+    : {
+        p_batch_id: normalizedBatchId,
+        p_outputs: outputsCheck.normalizedOutputs,
+        p_sha256: prepared.sha256Hex,
+        p_storage_path: prepared.storagePath,
+        p_byte_size: prepared.byteSize,
+        p_mime_type: prepared.mimeType,
+      };
+
+  const { error: rpcError } = await rpcTarget.rpc(rpcName, rpcArgs);
 
   if (rpcError) {
     const reconciled = await reconcileEvidenceState(
@@ -1325,6 +1412,7 @@ export async function submitProcessingWithRpc(
     if (reconciled) {
       return reconciled;
     }
+    await safeCleanupOrphanStorageObject(input.adminClient ?? client, prepared.storagePath);
     return {
       ok: false,
       code: "RPC_ERROR",
