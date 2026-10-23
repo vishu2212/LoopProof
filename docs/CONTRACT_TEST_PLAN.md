@@ -10,7 +10,7 @@ Source of truth: `docs/STATE_MACHINE.md`. Test IDs are stable; reference them in
 | 🟡 **WRITABLE NOW** | Can be written before the contract exists (toolchain, fixtures, pure helpers). Not yet written unless marked ✅. |
 | ⛔ **NEEDS CONTRACT** | Requires the Milestone 1 contract. **Not implemented. Not passing.** |
 
-> **Milestone 1 status:** All 162 Mocha tests across `test/toolchain.test.ts` (4), `test/helpers.test.ts` (3), and `test/LoopProofRegistry.test.ts` (155) are implemented and observed passing locally. Passing unit tests confirm adherence to the specification under tested scenarios; they do **not** guarantee complete security or prove that physical recycling occurred.
+> **Milestone 1 status:** All 185 Mocha tests across `test/toolchain.test.ts` (4), `test/helpers.test.ts` (3), and `test/LoopProofRegistry.test.ts` (178) are implemented and observed passing locally. Passing unit tests confirm adherence to the specification under tested scenarios; they do **not** guarantee complete security or prove that physical recycling occurred.
 
 ## Test actors (local Hardhat signers)
 
@@ -125,13 +125,13 @@ Source of truth: `docs/STATE_MACHINE.md`. Test IDs are stable; reference them in
 
 ### B7. Processor/collector self-verification rejection (verifier independence)
 
-> **Coverage note:** `VerifierNotIndependent` is directly exercised at `registerBatch` (`T-IND-01`, `T-IND-02`). Because assignees are locked at registration (D-15) and `verifier` is guaranteed distinct from `collector` and `processor`, public runtime calls to `verifyBatch`/`returnBatch`/`rejectBatch` by the collector or processor revert earlier at `_requireAssigned` (`NotAssignedActor`) before reaching the defense-in-depth `VerifierNotIndependent` check in `_verifierPreconditions`. These tests therefore do not directly exercise the second (runtime) `VerifierNotIndependent` branch.
+> **Verified check ordering:** The runtime defense-in-depth check in `_verifierPreconditions` is prioritized before `_requireAssigned`. Any attempt by an assigned collector or processor holding `VERIFIER_ROLE` to call `verifyBatch`, `returnBatch`, or `rejectBatch` explicitly reverts with `VerifierNotIndependent(actor)` rather than a generic `NotAssignedActor`. Unassigned third-party verifiers continue to revert with `NotAssignedActor`.
 
 | ID | Test | Status |
 |----|------|--------|
-| T-IND-01 | Address holding both `PROCESSOR_ROLE` and `VERIFIER_ROLE` cannot be registered as verifier for its own batch (`VerifierNotIndependent` at registration) and cannot verify an existing batch it processed (`NotAssignedActor` at `_requireAssigned`). | ✅ PASSING |
-| T-IND-02 | Address holding both `COLLECTOR_ROLE` and `VERIFIER_ROLE` cannot be registered as verifier for its own batch (`VerifierNotIndependent` at registration) and cannot verify an existing batch it collected (`NotAssignedActor` at `_requireAssigned`). | ✅ PASSING |
-| T-IND-03 | Same assignment check (`NotAssignedActor`) blocks self-`returnBatch` and self-`rejectBatch` by processor or collector on an existing batch. | ✅ PASSING |
+| T-IND-01 | Address holding both `PROCESSOR_ROLE` and `VERIFIER_ROLE` cannot be registered as verifier for its own batch (`VerifierNotIndependent` at registration) and cannot verify an existing batch it processed (`VerifierNotIndependent` at `_verifierPreconditions`). | ✅ PASSING |
+| T-IND-02 | Address holding both `COLLECTOR_ROLE` and `VERIFIER_ROLE` cannot be registered as verifier for its own batch (`VerifierNotIndependent` at registration) and cannot verify an existing batch it collected (`VerifierNotIndependent` at `_verifierPreconditions`). | ✅ PASSING |
+| T-IND-03 | Same independence check (`VerifierNotIndependent`) blocks self-`returnBatch` and self-`rejectBatch` by processor or collector on an existing batch. | ✅ PASSING |
 | T-IND-04 | A distinct assigned `verifier` can verify the batch (positive control). | ✅ PASSING |
 | T-IND-05 | Collector and processor may be the same address, provided the verifier is distinct. | ✅ PASSING |
 
@@ -174,6 +174,34 @@ Source of truth: `docs/STATE_MACHINE.md`. Test IDs are stable; reference them in
 | T-EVT-03 | Contract ABI has no `string` or dynamic `bytes` inputs in any function or event (prevents raw serial / free-text PII fields). | ✅ PASSING |
 | T-EVT-04 | `BatchVerified` event records a verifier address distinct from both collector and processor. | ✅ PASSING |
 | T-EVT-05 | Full batch transition history and revision outputs can be reconstructed from emitted events alone. | ✅ PASSING |
+
+### B11. Adversarial & Security Invariant Hardening
+
+| ID | Test | Status |
+|----|------|--------|
+| T-ADV-REG-01 | Revoking `REGISTRAR_ROLE` from the batch's registrar prevents cancellation (`AccessControlUnauthorizedAccount`). | ✅ PASSING |
+| T-ADV-REG-02 | Mutual registrar isolation: `registrar1` cannot cancel `registrar2`'s batch and vice versa (`NotAssignedActor`). | ✅ PASSING |
+| T-ADV-REG-03 | Admin granting itself `REGISTRAR_ROLE` cannot cancel any existing registered batch (`NotAssignedActor`). | ✅ PASSING |
+| T-ADV-REG-04 | Assigned registrar cannot cancel once collection has occurred (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-REG-05 | Claim key of a cancelled batch cannot be re-registered (`DuplicateClaimKey`). | ✅ PASSING |
+| T-ADV-IND-01 | Conflicted collector with `VERIFIER_ROLE` reverts with `VerifierNotIndependent` at `verifyBatch`. | ✅ PASSING |
+| T-ADV-IND-02 | Conflicted processor with `VERIFIER_ROLE` reverts with `VerifierNotIndependent` at `verifyBatch`. | ✅ PASSING |
+| T-ADV-IND-03 | Conflicted collector or processor cannot return or reject their own batch (`VerifierNotIndependent`). | ✅ PASSING |
+| T-ADV-IND-04 | Third-party non-conflicted verifier reverts with `NotAssignedActor` (distinguishing role authorization from conflict-of-interest rejection). | ✅ PASSING |
+| T-ADV-IND-05 | Integrated facility (`collector == processor`) is permitted provided the verifier is distinct; self-verification reverts with `VerifierNotIndependent`. | ✅ PASSING |
+| T-ADV-EVD-01 | Cross-stage digest reuse within the same batch reverts (`EvidenceAlreadyUsed`). | ✅ PASSING |
+| T-ADV-EVD-02 | Digest used in terminal batch (`VERIFIED`, `REJECTED`, `CANCELLED`) cannot be reused on a new batch (`EvidenceAlreadyUsed`). | ✅ PASSING |
+| T-ADV-EVD-03 | Digest from revision 0 cannot be reused in revision 2 after multiple returns (`EvidenceAlreadyUsed`). | ✅ PASSING |
+| T-ADV-EVD-04 | `bytes32(0)` is rejected across all evidence entry points (`MissingEvidence`). | ✅ PASSING |
+| T-ADV-TR-01 | Skipping stages from `REGISTERED` directly to later states reverts (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-TR-02 | Premature verification before processing claim reverts (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-TR-03 | Backward transitions are strictly forbidden (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-TR-04 | Terminal states `VERIFIED`, `REJECTED`, `CANCELLED` accept no mutations (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-MASS-01 | Output summing to `intake + 1` gram reverts with `MassBalanceExceeded`. | ✅ PASSING |
+| T-ADV-MASS-02 | 17 outputs exceeds `MAX_OUTPUTS` and reverts with `TooManyOutputs`. | ✅ PASSING |
+| T-ADV-MASS-03 | Zero mass or zero material code at any position reverts with `InvalidOutput`. | ✅ PASSING |
+| T-ADV-MASS-04 | Exact mass conservation (`sum == intake`) succeeds. | ✅ PASSING |
+| T-ADV-MASS-05 | Sub-intake mass claim (`sum < intake`) succeeds representing physical loss. | ✅ PASSING |
 
 ---
 

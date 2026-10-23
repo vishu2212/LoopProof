@@ -98,7 +98,7 @@ flowchart TD
     subgraph EVMTrack["Track 2: Solidity Protocol Reference Engine (Local Hardhat EVM)"]
         direction TB
         SolRegistry["LoopProofRegistry.sol<br>5-Stage Lifecycle FSM • Mass Balance Check<br>Verifier Independence Guard • Typed Reason Enums"]
-        HardhatEVM["Local Hardhat Simulated Network<br>EVM chainId 31337 • 162 Passing Automated Tests"]
+        HardhatEVM["Local Hardhat Simulated Network<br>EVM chainId 31337 • 185 Passing Automated Tests"]
 
         SolRegistry --> HardhatEVM
 
@@ -112,7 +112,7 @@ flowchart TD
    - **Live Cloud Registry (`/login`, `/live-batches`, `/live-batches/[batchId]`):** Interactive live registry powered by Supabase Auth and PostgreSQL with Row Level Security (`auth.uid()`), trigger-guarded state transitions, append-only audit logs, and `SECURITY DEFINER` RPCs (`lp_register_batch`, `lp_record_collection`, `lp_record_receipt`, `lp_submit_processing`, `lp_verify_batch`, `lp_return_batch`, `lp_reject_batch`, `lp_cancel_batch`).
 2. **Solidity Smart Contract Reference Engine (`contracts/`):**
    - `LoopProofRegistry.sol` implements the 5-stage finite state machine (`REGISTERED` → `COLLECTED` → `RECEIVED` → `PROCESSED_CLAIMED` → `VERIFIED`) with immutable participant locking, strict conservation of mass ($Output \le Intake$), verifier conflict-of-interest prevention, and typed return/reject reason codes.
-   - Tested and verified locally on Hardhat EVM (`chainId 31337`) across 162 automated test cases.
+   - Tested and verified locally on Hardhat EVM (`chainId 31337`) across 185 automated test cases.
 
 ---
 
@@ -120,7 +120,7 @@ flowchart TD
 
 ```
 contracts/   Solidity sources (LoopProofRegistry.sol, LoopProofTypes.sol)
-test/        Hardhat contract test suites (162 passing Mocha/Chai specs)
+test/        Hardhat contract test suites (185 passing Mocha/Chai specs)
 docs/        DECISIONS.md, STATE_MACHINE.md, CONTRACT_TEST_PLAN.md, submission brief
 supabase/    PostgreSQL schema migrations, RLS policies, triggers, and RPC procedures
 web/         Next.js 16 web application (Turbopack, TypeScript, React 19)
@@ -151,7 +151,7 @@ npm ci
 # Compile contracts
 npm run build      # hardhat build
 
-# Run complete 162-test contract suite
+# Run complete 185-test contract suite
 npm test           # hardhat test
 
 # Run contract TypeScript checks
@@ -219,7 +219,7 @@ POLYGON_AMOY_PRIVATE_KEY=<testnet-only-private-key-never-real-funds>
 
 ## Smart Contract & Blockchain Deployment Status
 
-- **Status:** Verified locally on Hardhat simulated network (EVM `chainId 31337`, 162 passing unit tests).
+- **Status:** Verified locally on Hardhat simulated network (EVM `chainId 31337`, 185 passing unit and adversarial tests).
 - **Public Testnet:** Currently not deployed to a public testnet. Hardhat configuration supports Base Sepolia (primary) and Polygon Amoy (fallback) via lazy `configVariable()` bindings.
 - **Scope of Protocol Claims:** Contract and ledger records demonstrate that authorized cryptographic keys recorded custody handoffs and that recorded evidence hashes have not been altered since submission. They do not prove that physical recycling occurred without valid off-chain evidence audits.
 
