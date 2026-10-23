@@ -1481,7 +1481,7 @@ describe("LoopProofRegistry", function () {
           .withArgs(idClaim, State.PROCESSED_CLAIMED, State.RECEIVED);
       });
 
-      it("[T-ADV-TR-04] terminal states VERIFIED, REJECTED, CANCELLED accept no mutations", async function () {
+      it("[T-ADV-TR-04] terminal states VERIFIED, REJECTED, CANCELLED accept no mutations across all 8 actions", async function () {
         const ctx = await load();
         const idVer = await advanceTo(ctx, "VERIFIED");
         const idRej = await advanceTo(ctx, "REJECTED");
@@ -1492,12 +1492,92 @@ describe("LoopProofRegistry", function () {
           [idRej, State.REJECTED],
           [idCan, State.CANCELLED],
         ] as const) {
-          await expect(act(ctx, "collect", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
-          await expect(act(ctx, "receipt", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
-          await expect(act(ctx, "submit", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
-          await expect(act(ctx, "verify", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
-          await expect(act(ctx, "cancel", id)).to.be.revertedWithCustomError(ctx.registry, "InvalidTransition");
+          const before = await snapshot(ctx, id);
+          for (const a of ACTIONS) {
+            await expect(act(ctx, a, id))
+              .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+              .withArgs(id, st, ACTION_TARGET[a]);
+          }
           expect(await ctx.registry.getState(id)).to.equal(st);
+          expect(await snapshot(ctx, id)).to.equal(before);
+        }
+      });
+
+      it("[T-ADV-TR-05] returnBatch with valid verifier actor and reason code is rejected against VERIFIED, REJECTED, CANCELLED", async function () {
+        const ctx = await load();
+        const idVer = await advanceTo(ctx, "VERIFIED");
+        const idRej = await advanceTo(ctx, "REJECTED");
+        const idCan = await advanceTo(ctx, "CANCELLED");
+
+        for (const [id, st] of [
+          [idVer, State.VERIFIED],
+          [idRej, State.REJECTED],
+          [idCan, State.CANCELLED],
+        ] as const) {
+          const before = await snapshot(ctx, id);
+          const reasons = [
+            ReturnReason.INSUFFICIENT_EVIDENCE,
+            ReturnReason.EVIDENCE_UNREADABLE,
+            ReturnReason.OUTPUT_DATA_INCOMPLETE,
+            ReturnReason.MASS_DISCREPANCY,
+          ];
+          for (const r of reasons) {
+            await expect(ctx.registry.connect(ctx.verifier).returnBatch(id, r))
+              .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+              .withArgs(id, st, State.RETURNED);
+          }
+          expect(await ctx.registry.getState(id)).to.equal(st);
+          expect(await snapshot(ctx, id)).to.equal(before);
+        }
+      });
+
+      it("[T-ADV-TR-06] rejectBatch with valid verifier actor and reason code is rejected against VERIFIED, REJECTED, CANCELLED", async function () {
+        const ctx = await load();
+        const idVer = await advanceTo(ctx, "VERIFIED");
+        const idRej = await advanceTo(ctx, "REJECTED");
+        const idCan = await advanceTo(ctx, "CANCELLED");
+
+        for (const [id, st] of [
+          [idVer, State.VERIFIED],
+          [idRej, State.REJECTED],
+          [idCan, State.CANCELLED],
+        ] as const) {
+          const before = await snapshot(ctx, id);
+          const reasons = [
+            RejectReason.EVIDENCE_INCONSISTENT,
+            RejectReason.MASS_BALANCE_IMPLAUSIBLE,
+            RejectReason.PROCESSOR_NOT_QUALIFIED,
+            RejectReason.CHAIN_OF_CUSTODY_BROKEN,
+          ];
+          for (const r of reasons) {
+            await expect(ctx.registry.connect(ctx.verifier).rejectBatch(id, r))
+              .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+              .withArgs(id, st, State.REJECTED);
+          }
+          expect(await ctx.registry.getState(id)).to.equal(st);
+          expect(await snapshot(ctx, id)).to.equal(before);
+        }
+      });
+
+      it("[T-ADV-TR-07] resubmitProcessing with valid processor actor, outputs, and fresh evidence is rejected against VERIFIED, REJECTED, CANCELLED", async function () {
+        const ctx = await load();
+        const idVer = await advanceTo(ctx, "VERIFIED");
+        const idRej = await advanceTo(ctx, "REJECTED");
+        const idCan = await advanceTo(ctx, "CANCELLED");
+
+        for (const [id, st] of [
+          [idVer, State.VERIFIED],
+          [idRej, State.REJECTED],
+          [idCan, State.CANCELLED],
+        ] as const) {
+          const before = await snapshot(ctx, id);
+          const freshEvidence = newEvidence(`term-resubmit-${st}`);
+          await expect(ctx.registry.connect(ctx.processor).resubmitProcessing(id, OUTPUTS_V2, freshEvidence))
+            .to.be.revertedWithCustomError(ctx.registry, "InvalidTransition")
+            .withArgs(id, st, State.PROCESSED_CLAIMED);
+          expect(await ctx.registry.getState(id)).to.equal(st);
+          expect(await snapshot(ctx, id)).to.equal(before);
+          expect(await ctx.registry.evidenceUsed(freshEvidence)).to.equal(false);
         }
       });
     });

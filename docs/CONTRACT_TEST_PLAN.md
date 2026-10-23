@@ -10,7 +10,7 @@ Source of truth: `docs/STATE_MACHINE.md`. Test IDs are stable; reference them in
 | 🟡 **WRITABLE NOW** | Can be written before the contract exists (toolchain, fixtures, pure helpers). Not yet written unless marked ✅. |
 | ⛔ **NEEDS CONTRACT** | Requires the Milestone 1 contract. **Not implemented. Not passing.** |
 
-> **Milestone 1 status:** All 185 Mocha tests across `test/toolchain.test.ts` (4), `test/helpers.test.ts` (3), and `test/LoopProofRegistry.test.ts` (178) are implemented and observed passing locally. Passing unit tests confirm adherence to the specification under tested scenarios; they do **not** guarantee complete security or prove that physical recycling occurred.
+> **Milestone 1 status:** All 188 Mocha tests across `test/toolchain.test.ts` (4), `test/helpers.test.ts` (3), and `test/LoopProofRegistry.test.ts` (181) are implemented and observed passing locally. Passing unit tests confirm adherence to the specification under tested scenarios; they do **not** guarantee complete security or prove that physical recycling occurred.
 
 ## Test actors (local Hardhat signers)
 
@@ -196,7 +196,10 @@ Source of truth: `docs/STATE_MACHINE.md`. Test IDs are stable; reference them in
 | T-ADV-TR-01 | Skipping stages from `REGISTERED` directly to later states reverts (`InvalidTransition`). | ✅ PASSING |
 | T-ADV-TR-02 | Premature verification before processing claim reverts (`InvalidTransition`). | ✅ PASSING |
 | T-ADV-TR-03 | Backward transitions are strictly forbidden (`InvalidTransition`). | ✅ PASSING |
-| T-ADV-TR-04 | Terminal states `VERIFIED`, `REJECTED`, `CANCELLED` accept no mutations (`InvalidTransition`). | ✅ PASSING |
+| T-ADV-TR-04 | Terminal states `VERIFIED`, `REJECTED`, `CANCELLED` accept zero mutations across all 8 lifecycle actions with assigned actors and valid arguments, asserting `InvalidTransition(batchId, current, attempted)`. | ✅ PASSING |
+| T-ADV-TR-05 | `returnBatch` invoked by assigned verifier across all 4 valid reason codes against `VERIFIED`, `REJECTED`, `CANCELLED` reverts with `InvalidTransition`, leaving state and snapshots intact. | ✅ PASSING |
+| T-ADV-TR-06 | `rejectBatch` invoked by assigned verifier across all 4 valid reason codes against `VERIFIED`, `REJECTED`, `CANCELLED` reverts with `InvalidTransition`, leaving state and snapshots intact. | ✅ PASSING |
+| T-ADV-TR-07 | `resubmitProcessing` invoked by assigned processor with valid outputs and fresh evidence against `VERIFIED`, `REJECTED`, `CANCELLED` reverts with `InvalidTransition`, preserving state and leaving evidence unconsumed. | ✅ PASSING |
 | T-ADV-MASS-01 | Output summing to `intake + 1` gram reverts with `MassBalanceExceeded`. | ✅ PASSING |
 | T-ADV-MASS-02 | 17 outputs exceeds `MAX_OUTPUTS` and reverts with `TooManyOutputs`. | ✅ PASSING |
 | T-ADV-MASS-03 | Zero mass or zero material code at any position reverts with `InvalidOutput`. | ✅ PASSING |

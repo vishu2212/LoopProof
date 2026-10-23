@@ -133,7 +133,7 @@ contract LoopProofRegistry is AccessControl {
     // Constructor
     // ---------------------------------------------------------------------
 
-    /// @param admin Receives DEFAULT_ADMIN_ROLE only (role management, no lifecycle authority).
+    /// @param admin Receives DEFAULT_ADMIN_ROLE only (role management; has no direct lifecycle entry points; per-batch assignment isolates existing batches).
     constructor(address admin) {
         if (admin == address(0)) revert ZeroAddress();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
