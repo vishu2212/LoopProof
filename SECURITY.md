@@ -41,10 +41,14 @@ LoopProof maintains a strict separation between its two distinct execution envir
 
 ## Verified Protocol Invariants & Security Mitigations
 
-### 1. Separation of Duties & Access Control
+### 1. Separation of Duties, Admin Boundaries, & Access Control
 - **OpenZeppelin Role Management:** Uses standard OpenZeppelin `AccessControl`.
-- **Administrative Boundary (D-16):** The `DEFAULT_ADMIN_ROLE` manages role grants and revocations only. It possesses zero lifecycle privileges: the admin cannot register, collect, receive, submit processing claims, verify, return, reject, or cancel any batch.
-- **Per-Batch Assignment Immutability (D-15, D-17):** Every lifecycle action requires *both* holding the required role *and* matching the specific participant address permanently assigned to that batch at registration (`registrar`, `collector`, `processor`, `verifier`). Assignees cannot be altered after registration.
+- **Administrative Boundary (D-16):** An account holding *only* `DEFAULT_ADMIN_ROLE` possesses **zero direct lifecycle authority**. It cannot call `registerBatch`, `recordCollection`, `recordReceipt`, `submitProcessing`, `resubmitProcessing`, `verifyBatch`, `returnBatch`, `rejectBatch`, or `cancelBatch`; all direct lifecycle calls revert with `AccessControlUnauthorizedAccount`. There are no emergency overrides or backdoor mutation functions.
+- **Role-Granting Capability:** As the role admin, `DEFAULT_ADMIN_ROLE` can grant any lifecycle role (`REGISTRAR_ROLE`, `COLLECTOR_ROLE`, `PROCESSOR_ROLE`, `VERIFIER_ROLE`) to any address, including to itself.
+- **Per-Batch Assignment Isolation on Existing Batches (D-15, D-17):** Holding a lifecycle role is a necessary but not sufficient condition to act on an existing batch. Every lifecycle transition strictly enforces `_requireAssigned(batchId, assignee)`. Assignees (`registrar`, `collector`, `processor`, `verifier`) are permanently locked at batch registration and cannot be modified. Even if the admin grants itself all lifecycle roles, it **cannot** act on, advance, or cancel any existing batch registered by or assigned to another account (reverting with `NotAssignedActor`).
+- **Residual Trust & Governance Risks:**
+  - *New Batches (Collusion/Sybil Risk):* The admin can grant lifecycle roles to distinct addresses under its control (or colluding entities) to register and progress *brand new* batches through the lifecycle to `VERIFIED`. Verifier independence enforces address separation, but cannot detect off-chain collusion between Sybil accounts.
+  - *Existing Batches (Liveness/DoS Risk):* While the admin cannot alter or cancel existing batches, it can revoke roles from assigned actors, blocking pending actions on in-flight batches (e.g. revoking `COLLECTOR_ROLE` blocks collection; revoking `VERIFIER_ROLE` blocks verification). Admin key custody remains a fundamental operational trust assumption.
 
 ### 2. Registrar Cancellation Authorization
 - **Cancellation Window:** Gated strictly to `REGISTERED` state (before physical collection).

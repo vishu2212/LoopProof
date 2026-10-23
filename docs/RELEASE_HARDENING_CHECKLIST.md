@@ -99,7 +99,7 @@ These steps require direct access to your deployed Supabase project (`tvsjrxjvme
 From repository root:
 
 ```bash
-# Root contracts & Hardhat tests (185 tests)
+# Root contracts & Hardhat tests (188 tests)
 npm test
 npm run typecheck
 
@@ -113,7 +113,7 @@ npm run build --prefix web
 
 ## 4. Submission & Architectural Disclosures
 
-- **Solidity Smart Contracts**: Deployed on local Hardhat EVM (chainId 31337) for reproducible protocol testing (185 passing unit and adversarial tests). Not deployed on public Ethereum mainnet.
+- **Solidity Smart Contracts**: Deployed on local Hardhat EVM (chainId 31337) for reproducible protocol testing (188 passing unit and adversarial tests). Not deployed on public Ethereum mainnet.
 - **Live Registry**: Backed by PostgreSQL on Supabase with Row Level Security, custom RPC state transitions, and private S3-compatible storage. Not anchored to public blockchain blocks.
 - **Cryptographic Hashes**: SHA-256 digests prove byte-level integrity against post-upload tampering; they do not attest to real-world material truth or recycling claims without independent auditing.
 - **Synthetic Demo Data**: Routes `/` and `/batches/*` display clearly labeled canonical synthetic fixtures for demonstrative UI review.
